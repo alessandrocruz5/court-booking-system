@@ -1,0 +1,15 @@
+# Local and test Postgres. `docker compose up -d --wait db`, then use
+# postgres://postgres:postgres@localhost:54329/cb (54329 avoids a Homebrew Postgres on 5432).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cb
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "cb"]
+      interval: 2s
+      retries: 30

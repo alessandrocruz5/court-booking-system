@@ -1,0 +1,42 @@
+[project]
+name = "cb-backend"
+version = "0.0.0"
+description = "Court booking backend: Django API, webhook and staff dashboard."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "dj-database-url>=3",
+    "django>=6.1,<6.2",
+    "gunicorn>=26",
+    "psycopg[binary]>=3.3",
+    "whitenoise>=6.12",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-django>=4.14",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "S", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106", "S603", "S607"]
+"conftest.py" = ["S101"]
+"config/settings_test.py" = ["S105"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings_test"
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+# WhiteNoise warns that STATIC_ROOT is missing; only collectstatic (the image build) creates it.
+filterwarnings = ["ignore:No directory at:UserWarning"]
