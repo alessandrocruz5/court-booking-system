@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel a push run: the secrets scan of a push covers only that push's commits.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      # Same database and host port as compose.yaml's `db`: the backend tests default to
+      # postgres://postgres:postgres@localhost:54329/cb, so no TEST_DATABASE_URL is needed.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cb
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cb"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # setup-uv publishes immutable releases only (no major tags since v8), so it's pinned like gitleaks.
+      # uv downloads the Python from apps/backend/.python-version itself.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+          # uv's own default. Turbo's strict env mode drops the UV_CACHE_DIR this action exports, so
+          # uv inside `pnpm lint`/`pnpm test` writes here, and the post step saves this directory.
+          cache-local-path: ~/.cache/uv
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      # No env: settings and pages read variables per request, never at build time.
+      - run: pnpm build
+
+  # Fails when a pushed or PR commit adds a secret. It scans only those commits, not all history.
+  # By then the secret is already on GitHub: rotate it anyway (runbook → Secret exposure).
+  secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # the action lists the PR's commits to pick its scan range
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # gitleaks walks the commit range, so it needs the history
+      # Personal-account repo: no GITLEAKS_LICENSE needed. The token is read-only (PR commits, owner type).
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The read-only token can't comment on PRs; findings go to the job summary instead.
+          GITLEAKS_ENABLE_COMMENTS: "false"

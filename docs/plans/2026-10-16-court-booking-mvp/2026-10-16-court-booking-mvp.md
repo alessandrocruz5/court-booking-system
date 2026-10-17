@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: court-booking-system
 delivery: pr
 base: main
@@ -281,3 +281,10 @@ gcloud run services describe cb-web --region asia-southeast1 --format='value(spe
 - 2026-10-16: planned. Architecture A, full MVP, PR delivery (Jira key pending), guest checkout.
 - 2026-10-16: tickets created: Epic CBS-1, units CBS-2…CBS-10 (U1…U9). CBS-4 now depends on CBS-3, to match the linear merge order.
 - 2026-10-16: audited, 20 fixes applied (1 BLOCK, 19 FIX) plus 6 of 7 notes (`@cb/env` kept for fun-run parity). User decision: Cloud Run max instances 2 → 1.
+- 2026-10-17: CBS-2 build started on branch CBS-2. Rollback point: 3b62227909207a9266f8c6bafb366b366961a80a.
+- 2026-10-17: 01 done (sonnet, 0 retries): root workspace, @cb/config and @cb/env copied from fun-run; turbo needs a real pnpm on PATH (corepack enable --install-directory).
+- 2026-10-17: 02 done (opus, 0 retries): Django 6.1.2 / Python 3.14 skeleton, 21 tests; turbo.json gained globalPassThroughEnv TEST_DATABASE_URL (strict mode dropped it); check --deploy has 3 expected warnings (W005/W021 HSTS by design, W008 test settings).
+- 2026-10-17: 03 done (sonnet, 0 retries): Next 16 storefront shell, standalone, no-env build; 13 web tests. One-off vitest ENOTEMPTY on node_modules/.vitest-cache when turbo ran two vitest tasks in parallel (not reproduced in 6 cold runs).
+- 2026-10-17: 04 done (opus, 0 retries): CI (verify + gitleaks), dependabot, CLAUDE.md (verbatim), runbook, README. Deviations: setup-uv pinned by SHA (# v10.3.0), since no major tags exist after v8; `cache-local-path: ~/.cache/uv`, since turbo strict mode strips UV_CACHE_DIR. The ci.yml comment cites "runbook → Secret exposure", which no prompt writes yet.
+- 2026-10-17: CBS-2 committed (5c71218); Commands chain green, gitleaks clean (one `// gitleaks:allow` on the fake sk_live_ test value in @cb/env, copied from fun-run). `.vscode/` added to .gitignore (user approved). Push blocked: the gh token lacks the `workflow` scope.
+- 2026-10-17: ledger committed on the CBS-2 branch and shipped in the PR (user choice, overriding the bookkeeping-on-base convention).

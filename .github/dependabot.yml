@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Covers every package in the pnpm workspace (pnpm-lock.yaml at the root).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Minor and patch updates for the whole workspace arrive as one PR; majors stay separate.
+      workspace-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # The Django backend (apps/backend/pyproject.toml and uv.lock).
+  - package-ecosystem: uv
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Minor and patch updates for the backend arrive as one PR; majors stay separate.
+      backend-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

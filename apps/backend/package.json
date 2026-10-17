@@ -1,0 +1,11 @@
+{
+  "name": "@cb/backend",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "uv run --env-file .env python manage.py runserver 8000",
+    "format": "uv run ruff format .",
+    "lint": "uv run --locked ruff check . && uv run --locked ruff format --check .",
+    "test": "uv run --locked python manage.py makemigrations --check --dry-run --settings=config.settings_test && uv run --locked pytest"
+  }
+}
