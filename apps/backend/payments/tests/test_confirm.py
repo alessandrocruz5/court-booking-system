@@ -182,10 +182,15 @@ def test_rejections_change_nothing(make, reason, caplog):
     assert booking.status == Status.PENDING
     assert booking.updated_at == before
     assert booking.payment_id == ""
-    # The session holds a paid payment: logged as an error with the payment ID, for a refund.
     (record,) = [r for r in caplog.records if r.getMessage().startswith("payment.rejected ")]
-    assert record.levelno == logging.ERROR
-    assert record.getMessage().endswith(f"reason={reason} payment=pay_test1")
+    if reason in ("amount_mismatch", "metadata_mismatch"):
+        # Our booking's session holds a paid payment: an error with the payment ID, for a refund.
+        assert record.levelno == logging.ERROR
+        assert record.getMessage().endswith(f"reason={reason} payment=pay_test1")
+    else:
+        # An unknown or live session isn't ours to refund (the PayMongo account is shared).
+        assert record.levelno == logging.WARNING
+        assert record.getMessage().endswith(f"reason={reason}")
     assert_no_pii(caplog.text)
 
 

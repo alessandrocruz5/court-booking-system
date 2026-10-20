@@ -36,6 +36,9 @@ _SQLSTATE = re.compile(r"^[0-9A-Z]{5}$")
 # A booking in one of these never changes again, so the success page needn't ask PayMongo.
 FINAL_PAID = (Status.CONFIRMED, Status.NEEDS_REFUND)
 
+# Rejections of a session that matched one of our bookings: paid money there is ours to refund.
+REFUNDABLE_REJECTIONS = ("metadata_mismatch", "amount_mismatch")
+
 
 def _sqlstate(error: BaseException) -> str | None:
     """The Postgres SQLSTATE under a database error (psycopg's, or Django's wrapper's cause)."""
@@ -81,10 +84,12 @@ class CheckResult:
 
 def _rejected(session: CheckoutSession, reason: str) -> ConfirmResult:
     payment = next((p for p in session.payments if p.status == "paid"), None)
-    if payment is None:
+    if payment is None or reason not in REFUNDABLE_REJECTIONS:
+        # An unknown or live session isn't ours to refund: PayMongo sends every webhook on the
+        # account, which other apps and local development share.
         logger.warning("payment.rejected session=%s reason=%s", session.id, reason)
     else:
-        # Money was taken but not recorded: staff find the payment by its ID and refund it.
+        # Our booking's session, paid but not recorded: staff find the payment and refund it.
         logger.error(
             "payment.rejected session=%s reason=%s payment=%s", session.id, reason, payment.id
         )

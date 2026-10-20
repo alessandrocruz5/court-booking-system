@@ -407,13 +407,15 @@ Local testing: put both values in `apps/backend/.env` (`PAYMONGO_SECRET_KEY` and
 is gitignored). PayMongo can't reach localhost, so locally no webhook arrives: the success page's server-side check of
 the checkout session confirms the booking instead.
 
-**Refunds.** A payment made within its hold keeps the booking's slots, however late PayMongo reports it. A payment
-made after its hold lapsed re-claims the same slots if they are still free. If they were taken meanwhile, the slot has
+**Refunds.** A payment made within its hold keeps the booking's slots, however late PayMongo reports it, unless a
+cleanup expired the hold before the payment was recorded; then it counts as late. A payment made after its hold lapsed
+re-claims the same slots if they are still free. If they were taken meanwhile, the slot has
 already started, or the booking was cancelled, the booking becomes `needs_refund`, with the payment recorded on it.
 Refund it by hand in the PayMongo test dashboard, finding the payment by the booking's `payment_id`. The booking stays
-flagged `needs_refund` on the dashboard as an audit trail; nothing in the app clears it. A paid session the app
-rejects (unknown session, wrong amount or metadata) is logged as `payment.rejected … payment=<id>` at ERROR: refund
-that payment too.
+flagged `needs_refund` on the dashboard as an audit trail; nothing in the app clears it. A paid session of one of
+our bookings that the app rejects (wrong amount or metadata) is logged as `payment.rejected … payment=<id>` at ERROR:
+refund that payment too. An unknown session is only a WARNING and never ours to refund: PayMongo sends every webhook
+on the account, which other apps and local development share.
 
 If the test secret key or the webhook secret leaks, follow `## Secret exposure`: roll the key in the PayMongo
 dashboard (test mode); for the webhook secret, disable the webhook (`POST /v1/webhooks/<id>/disable`, with the same
