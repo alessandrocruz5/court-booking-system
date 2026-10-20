@@ -30,10 +30,24 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - `apps/backend/.dockerignore` excludes `**/tests`, so tests are never in the image.
     - Follow-ups (not scheduled): `control_socket_disable = True` in `config/gunicorn.conf.py` (gunicorn 26 control socket; the image gives `app` a home dir meanwhile); code-guardian nits in the plan Log (digest-pinned base images, Dependabot major/minor ignore, `BACKEND_HOST` trailing slash, `run.developer` instead of `run.admin`).
     - Local tooling: Docker needs the `docker-buildx` package; `docker compose` needs the compose plugin (`docker-compose` package) for the `## Commands` chain.
-- [ ] CBS-4 — Booking engine: courts, rules, holds · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 07, 08, 09 · depends: CBS-3 · model: opus
+- [x] CBS-4 — Booking engine: courts, rules, holds · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 07, 08, 09 · depends: CBS-3 · model: opus (merged 2026-10-20)
   - **Story:** Adds the courts, bookings, rules, pricing and 20-minute payment holds, plus the least-privilege DB role. The database itself makes double-booking impossible.
-- [ ] CBS-5 — PayMongo payments · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 10, 11 · depends: CBS-4 · model: opus
+  - **Result:** PR #6 (merge 83269dc). `bookings` app (Court/Booking/SlotLock, 18 courts in `0002_courts`), `rules`, `pricing`, `references`, `availability`, `holds`; `core` RateLimit (`hit`/`prune`) and `0002_app_role` (`cb_app` DML only); runbook `## Database roles and migrations`. 135 backend tests, concurrency tests stable. Gate: CI + code-guardian (0 Blockers; all Should-fixes fixed; re-review APPROVE WITH NITS).
+  - **Downstream:**
+    - New tables: `bookings_court`, `bookings_booking`, `bookings_slotlock`, `core_ratelimit`. Booking already carries `checkout_session_id`, `price_centavos`, `payment_id`, `payment_method`, `fee_centavos`, `net_centavos`, `paid_at`, `hold_expires_at`, so CBS-5 needs no booking migration for them.
+    - `holds.reacquire` must run inside `atomic()`, accepts an `expired` or lapsed `pending` online booking (`ValueError` otherwise), and returns False once `starts_at <= now`. `release` takes only cancelled/expired/needs_refund, and `expired` only from `pending`. The full contract is in prompt 11's Context.
+    - Built beyond the spec: `rules.validate_search` and `STAFF_WINDOW_DAYS = 30` (for CBS-6/CBS-10); `create_staff_booking` raises for a block without a note or a walk-in without a sport.
+    - Deferred: occupancy/prune indexes (fine at demo scale).
+- [x] CBS-5 — PayMongo payments · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 10, 11 · depends: CBS-4 · model: opus (merged 2026-10-20)
   - **Story:** Connects PayMongo in test mode: checkout sessions, the signed webhook, and one idempotent payment confirmation that also handles late payments.
+  - **Result:** PR #7 (merge 12e59a3). `payments` app: `paymongo` (Hosted Checkout client, `get_client()`), `env`, `webhook` (signature/event parsing), `confirm` (`confirm_payment`, `check_checkout`, `release_checkout`), `POST /webhooks/paymongo`; runbook `## PayMongo (test mode)`; httpx 0.28.1. 332 backend tests. Gate: CI + code-guardian (1 Blocker + 5 Should-fixes fixed; re-review 0 Blockers, 1 Should-fix fixed), then CI only on 2f3fc46.
+  - **Downstream:**
+    - New env keys `PAYMONGO_SECRET_KEY` (only `sk_test_`) and `PAYMONGO_WEBHOOK_SECRET` (≥ 24 chars; the public `pending` placeholder fails closed). No new tables.
+    - `PayMongoClient` is a context manager: `with get_client() as client:`. Never call it inside `atomic()`.
+    - `check_checkout` raises RuntimeError inside `atomic()`, so its API tests must be transactional (`serialized_rollback=True`). It returns `pending` for an expired/cancelled booking with no payment; CBS-6/7 decide what the page shows. Prompt 13's Context records all of this.
+    - `release_checkout` re-checks status under `select_for_update` and never cancels a concurrently confirmed booking; it expires the PayMongo session via `on_commit`.
+    - Unknown or live paid sessions log WARNING and are not refunded (the PayMongo account is shared with fun-run and local dev).
+    - Deferred nits: `/webhooks/*` no-store on 404/400 raised outside the view; a JSON 405 (today `require_POST` returns a no-store HTML 405).
 - [ ] CBS-6 — Storefront API · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 12, 13 · depends: CBS-5 · model: opus
   - **Story:** Exposes the token-guarded JSON API the storefront calls (catalog, availability, booking, checkout, lookup), pinned by shared contract fixtures.
 - [ ] CBS-7 — Customer booking site · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 14, 15, 16, 17 · depends: CBS-6 · model: opus

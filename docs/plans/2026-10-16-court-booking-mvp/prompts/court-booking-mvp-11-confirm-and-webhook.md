@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-10-16-court-booking-mvp]]"
 id: 11
 unit: CBS-5
-status: todo
+status: done
 model: opus
 effort: xhigh
 depends_on: [10]
@@ -45,7 +45,14 @@ check `check_checkout()` and the cancel-page release `release_checkout()`. Also 
     `checkout_session_id`, `price_centavos`, `payment_id`, `payment_method`, `fee_centavos`, `net_centavos`, `paid_at`
     and `hold_expires_at`. Also `SlotLock`.
   - `bookings/holds.py`: `reacquire(booking, *, now=None) -> bool` (re-claims the same court, spaces and hours for an
-    `expired` booking, without changing status) and `release(booking, *, status, now=None) -> bool`.
+    `expired`, or lapsed `pending`, online booking, without changing status) and
+    `release(booking, *, status, now=None) -> bool`. As built in CBS-4: `reacquire` must run inside `atomic()`
+    (`RuntimeError` otherwise); it re-locks the row with `select_for_update` and judges that copy (`ValueError` for a
+    non-online booking or one that isn't `expired`/`pending`, so route `cancelled` to `needs_refund` without calling it);
+    it returns **False once `starts_at <= now`**, so a payment that lands after the slot started becomes `needs_refund`
+    (test it). "Hold expired but slots still free → confirmed" fixtures need a slot that hasn't started at the `now`
+    they pass. `release(status="expired")` is allowed only from `pending` (`ValueError` from `confirmed`); an
+    already-final booking returns False first.
 - **`payments/confirm.py`**:
   - `@dataclass(frozen=True) ConfirmResult(status: str, booking: Booking | None = None, reason: str | None = None)`.
     The status is `confirmed | pending | needs_refund | rejected`, and the reject reasons are `livemode`,

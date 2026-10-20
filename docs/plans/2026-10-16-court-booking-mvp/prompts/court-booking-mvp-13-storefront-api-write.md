@@ -48,6 +48,13 @@ Add rate limits, and extend the contract fixtures and tests.
   - `payments.paymongo`: `get_client()`, `PayMongoError`. `payments.env.PaymentsConfigError`.
   - `payments.confirm`: `check_checkout(id) -> CheckResult(status, booking)` (confirmed, pending, needs_refund,
     not_found or unavailable) and `release_checkout(id) -> "released" | "already_paid" | "not_found"`.
+    As built in CBS-5: `check_checkout` raises `RuntimeError` inside `atomic()` (it calls PayMongo), so the view must
+    not wrap it in a transaction, and tests that reach it unmocked need
+    `django_db(transaction=True, serialized_rollback=True)`. It returns `pending` for an `expired` or `cancelled`
+    booking with no paid payment; decide what the confirm endpoint answers for that. `release_checkout` also expires
+    the PayMongo session of an `expired` hold (after commit). `PayMongoClient` is a context manager:
+    `with get_client() as client:`. `create_checkout_session`'s `line_item_name`/`description` go to PayMongo
+    verbatim: no personal data in them. `PAYMONGO_WEBHOOK_SECRET` must be 24+ characters.
   - `settings.SITE_URL`: the web origin, no trailing slash.
 - **Endpoints**: all `POST`, JSON body ≤ 4 KB (larger → 413 `{"error":"too_large"}`), `@require_service_token`, `no-store`.
   - **`POST /api/v1/bookings`**. Body: `{court, sport, coverage, date, start_hour, hours, customer: {name, email,
