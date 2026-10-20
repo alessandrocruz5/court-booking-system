@@ -11,3 +11,6 @@ docs/plans
 apps/backend/.venv
 apps/backend/staticfiles
 **/__pycache__
+# The deploy's google-github-actions/auth credential file, written to the workspace root.
+# It must never reach a build layer or the GHA cache.
+**/gha-creds-*.json
