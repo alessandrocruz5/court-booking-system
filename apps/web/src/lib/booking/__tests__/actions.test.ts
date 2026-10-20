@@ -232,6 +232,14 @@ describe("startCheckout API errors", () => {
     },
   );
 
+  it("maps an invalid_request client_ip to the unavailable message and logs the field name only", async () => {
+    createBookingMock.mockRejectedValue(new ApiError(400, "invalid_request", ["client_ip"]));
+    const state = await startCheckout(INITIAL, form());
+    expect(state.fieldErrors).toBeUndefined();
+    expect(state.message).toBe("Payments are unavailable right now. Please try again shortly.");
+    expect(console.error).toHaveBeenCalledWith("checkout.create_failed invalid_request client_ip");
+  });
+
   it("maps mixed invalid_request fields to both", async () => {
     createBookingMock.mockRejectedValue(
       new ApiError(400, "invalid_request", ["date", "customer.email", "constructor"]),

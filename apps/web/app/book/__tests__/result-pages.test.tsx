@@ -151,7 +151,6 @@ describe("/book/cancelled", () => {
     ["sec-purpose", "prefetch;prerender"],
     ["sec-purpose", "prefetch"],
     ["purpose", "prefetch"],
-    ["next-router-prefetch", "1"],
   ])("on a speculative load (%s: %s), renders the release button instead", async (name, value) => {
     cookieValue = "cs_x";
     requestHeaders = new Headers({ [name]: value });

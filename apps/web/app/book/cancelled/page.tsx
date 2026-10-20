@@ -90,10 +90,14 @@ export default async function CancelledPage() {
   }
 }
 
-/** `Sec-Purpose`/`Purpose: prefetch` (also `prefetch;prerender`), or a Next router prefetch. */
+/**
+ * A browser's speculative load: `Sec-Purpose`/`Purpose: prefetch` (also `prefetch;prerender`).
+ * Next's own router prefetch never reaches this page: `headers()` hides `next-router-prefetch`,
+ * every link here is `prefetch={false}`, and a prefetch of `/book/*` stops at `book/loading.tsx`.
+ */
 function isPrefetch(requestHeaders: Headers): boolean {
   const purpose = `${requestHeaders.get("sec-purpose") ?? ""} ${requestHeaders.get("purpose") ?? ""}`;
-  return purpose.toLowerCase().includes("prefetch") || requestHeaders.has("next-router-prefetch");
+  return purpose.toLowerCase().includes("prefetch");
 }
 
 async function release(

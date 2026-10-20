@@ -171,6 +171,11 @@ export async function startCheckout(
     });
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
+    if (error.code === "invalid_request" && error.fields?.includes("client_ip")) {
+      // Our forwarded IP, not the visitor's input: the field name only, never its value.
+      console.error("checkout.create_failed invalid_request client_ip");
+      return { message: UNAVAILABLE, values };
+    }
     console.error(`checkout.create_failed ${error.code}`);
     if (error.code === "invalid_request" && error.fields?.length) {
       return { ...apiFieldErrors(error.fields), values };
