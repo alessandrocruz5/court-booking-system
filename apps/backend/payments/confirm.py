@@ -4,9 +4,10 @@ from PayMongo: the success page looks it up (`check_checkout()`), and the signed
 
 `confirm_payment()` is idempotent and safe to run from both callers at once: the booking row is
 locked and its status re-checked before the one write, so only one caller records the payment and
-every caller then reports the same outcome. A payment that lands after the hold lapsed re-claims
-the same slots if they are still free; otherwise the booking becomes `needs_refund`, with the
-payment recorded so staff can refund it by hand.
+every caller then reports the same outcome. A payment made after the hold lapsed re-claims the
+same slots if they are still free and haven't started; otherwise the booking becomes
+`needs_refund`, with the payment recorded so staff can refund it by hand. A payment made within the
+hold keeps its locks, however late it is delivered.
 
 No PayMongo call happens inside a database transaction. Logs carry booking references and
 PayMongo IDs only, never customer data or an exception's text (RA 10173).
@@ -79,7 +80,14 @@ class CheckResult:
 
 
 def _rejected(session: CheckoutSession, reason: str) -> ConfirmResult:
-    logger.warning("payment.rejected session=%s reason=%s", session.id, reason)
+    payment = next((p for p in session.payments if p.status == "paid"), None)
+    if payment is None:
+        logger.warning("payment.rejected session=%s reason=%s", session.id, reason)
+    else:
+        # Money was taken but not recorded: staff find the payment by its ID and refund it.
+        logger.error(
+            "payment.rejected session=%s reason=%s payment=%s", session.id, reason, payment.id
+        )
     return ConfirmResult("rejected", reason=reason)
 
 
@@ -128,10 +136,20 @@ def confirm_payment(session: CheckoutSession, *, now: datetime | None = None) ->
         if locked.status in FINAL_PAID:
             return ConfirmResult(locked.status, locked)
 
-        if locked.status == Status.PENDING and SlotLock.objects.filter(booking=locked).exists():
+        paid_in_time = (
+            locked.hold_expires_at is not None
+            and (payment.paid_at or now) <= locked.hold_expires_at
+        )
+        if (
+            locked.status == Status.PENDING
+            and paid_in_time
+            and SlotLock.objects.filter(booking=locked).exists()
+        ):
+            # Paid within the hold (perhaps delivered late, by a webhook retry): its locks stand.
             keeps_slots = True
         elif locked.status in (Status.EXPIRED, Status.PENDING):
-            # The hold lapsed: a late payment. Re-claim the same slots if they're still free.
+            # The hold lapsed: a late payment. Re-claim the same slots if they're still free and
+            # haven't started.
             keeps_slots = reacquire(locked, now=now)
         elif locked.status == Status.CANCELLED:
             # Paid after the hold was released.
@@ -154,6 +172,8 @@ def check_checkout(checkout_session_id: str | None) -> CheckResult:
     """The success page's check: find our booking for the session ID, read the session from
     PayMongo and confirm it. A session ID we don't know is never sent to PayMongo. Call it outside
     any transaction: it makes an HTTP request."""
+    if transaction.get_connection().in_atomic_block:
+        raise RuntimeError("check_checkout must not run inside transaction.atomic()")
     if not is_checkout_session_id(checkout_session_id):
         return CheckResult("not_found")
     try:
@@ -186,7 +206,8 @@ def _expire_session(checkout_session_id: str) -> None:
 
 def release_checkout(checkout_session_id: str | None) -> str:
     """The cancel page: release a pending booking's slots, then expire its checkout session once
-    the release has committed. Returns `released`, `already_paid` or `not_found`."""
+    the release has committed. A lapsed (`expired`) hold's session is expired too, since it could
+    still take a payment. Returns `released`, `already_paid` or `not_found`."""
     if not is_checkout_session_id(checkout_session_id):
         return "not_found"
     booking = Booking.objects.filter(checkout_session_id=checkout_session_id).first()
@@ -198,8 +219,9 @@ def release_checkout(checkout_session_id: str | None) -> str:
         locked = Booking.objects.select_for_update().get(pk=booking.pk)
         if locked.status in FINAL_PAID:
             return "already_paid"
-        if locked.status == Status.PENDING:
-            release(locked, status=Status.CANCELLED)
+        if locked.status in (Status.PENDING, Status.EXPIRED):
+            if locked.status == Status.PENDING:
+                release(locked, status=Status.CANCELLED)
             # The HTTP call runs after the commit, outside the transaction.
             transaction.on_commit(partial(_expire_session, checkout_session_id))
     return "released"

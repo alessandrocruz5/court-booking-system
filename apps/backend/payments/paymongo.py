@@ -208,7 +208,8 @@ class PayMongoClient:
 
         try:
             payload: object = response.json()
-        except ValueError:
+        except ValueError, RecursionError:
+            # RecursionError: a deeply nested body.
             payload = None
         status = response.status_code
         if not response.is_success:
@@ -228,7 +229,9 @@ class PayMongoClient:
         cancel_url: str,
     ) -> CheckoutSession:
         """Create a checkout session for one line item. `booking_id` is the only metadata PayMongo
-        gets, so no personal data leaves us. The amount is the booking's price snapshot."""
+        gets, so no personal data leaves us. `line_item_name` and `description` go to PayMongo
+        verbatim and show on its checkout page: they must hold no personal data either. The amount
+        is the booking's price snapshot."""
         if type(amount_centavos) is not int or amount_centavos <= 0:
             raise ValueError("Checkout amount must be a positive whole number of centavos")
         session = self._request(

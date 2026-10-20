@@ -201,6 +201,17 @@ def test_create_refuses_a_non_json_success():
     assert excinfo.value.status == 200
 
 
+@pytest.mark.parametrize("status", [200, 500])
+def test_create_refuses_a_deeply_nested_body_as_a_paymongo_error(status):
+    # json.loads raises RecursionError, not ValueError, on a body nested this deep.
+    nested = "[" * 200_000 + "]" * 200_000
+    _, client = client_returning(httpx.Response(status, text=nested))
+    with pytest.raises(PayMongoError) as excinfo:
+        client.create_checkout_session(**INPUT)
+    assert excinfo.value.status == status
+    assert excinfo.value.codes == ()
+
+
 # --- retrieve_checkout_session ---------------------------------------------------------------
 
 

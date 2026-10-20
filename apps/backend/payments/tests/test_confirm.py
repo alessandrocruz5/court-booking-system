@@ -1,12 +1,13 @@
 import logging
 import threading
+import time
 import uuid
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
 
 from bookings import holds, rules
 from bookings.holds import Customer
@@ -87,6 +88,10 @@ def lock_keys(booking: Booking) -> set[tuple[str, int]]:
             "space", "starts_at"
         )
     }
+
+
+def lock_ids(booking: Booking) -> set[int]:
+    return set(SlotLock.objects.filter(booking=booking).values_list("pk", flat=True))
 
 
 def assert_no_pii(text: str) -> None:
@@ -177,8 +182,23 @@ def test_rejections_change_nothing(make, reason, caplog):
     assert booking.status == Status.PENDING
     assert booking.updated_at == before
     assert booking.payment_id == ""
-    assert f"reason={reason}" in caplog.text
+    # The session holds a paid payment: logged as an error with the payment ID, for a refund.
+    (record,) = [r for r in caplog.records if r.getMessage().startswith("payment.rejected ")]
+    assert record.levelno == logging.ERROR
+    assert record.getMessage().endswith(f"reason={reason} payment=pay_test1")
     assert_no_pii(caplog.text)
+
+
+@pytest.mark.django_db
+def test_rejection_without_a_paid_payment_is_a_warning(caplog):
+    caplog.set_level(logging.INFO, logger="cb.payments")
+    booking = hold()
+    unpaid = session(booking, paid(booking, status="pending"), id="cs_unknown")
+
+    assert confirm_payment(unpaid, now=NOW) == ConfirmResult("rejected", reason="unknown_session")
+    (record,) = [r for r in caplog.records if r.getMessage().startswith("payment.rejected ")]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == "payment.rejected session=cs_unknown reason=unknown_session"
 
 
 @pytest.mark.django_db
@@ -197,13 +217,62 @@ def test_no_paid_payment_is_pending(payment_status):
 
 
 @pytest.mark.django_db
-def test_lapsed_pending_hold_still_holding_its_locks_is_confirmed():
+def test_payment_made_in_time_but_delivered_after_the_hold_lapsed_keeps_its_locks():
+    # A webhook retry: paid at 10:05, delivered after the hold lapsed at 10:20, nightly not run.
     booking = hold()
+    before = lock_ids(booking)
+    assert PAID_AT <= booking.hold_expires_at <= LAPSED
 
     assert confirm_payment(session(booking), now=LAPSED).status == "confirmed"
     booking.refresh_from_db()
     assert booking.status == Status.CONFIRMED
     assert lock_keys(booking) == {("F", 12)}
+    # Kept, not dropped and re-claimed.
+    assert lock_ids(booking) == before
+
+
+@pytest.mark.django_db
+def test_pending_hold_paid_after_it_lapsed_once_the_slot_started_needs_refund():
+    booking = hold()
+    late = paid(booking, paid_at=booking.hold_expires_at + timedelta(minutes=1))
+
+    result = confirm_payment(session(booking, late), now=booking.starts_at)
+
+    assert result.status == "needs_refund"
+    booking.refresh_from_db()
+    assert booking.status == Status.NEEDS_REFUND
+    assert booking.payment_id == "pay_test1"
+    assert lock_keys(booking) == set()
+
+
+@pytest.mark.django_db
+def test_pending_hold_paid_in_time_is_confirmed_even_once_the_slot_started():
+    booking = hold()
+    in_time = paid(booking, paid_at=booking.hold_expires_at - timedelta(minutes=1))
+
+    result = confirm_payment(session(booking, in_time), now=booking.ends_at + timedelta(hours=1))
+
+    assert result.status == "confirmed"
+    booking.refresh_from_db()
+    assert booking.status == Status.CONFIRMED
+    assert lock_keys(booking) == {("F", 12)}
+
+
+@pytest.mark.django_db
+def test_pending_hold_paid_after_it_lapsed_is_reacquired_while_the_slot_is_free():
+    booking = hold()
+    before = lock_ids(booking)
+    late = paid(booking, paid_at=booking.hold_expires_at + timedelta(minutes=1))
+
+    result = confirm_payment(session(booking, late), now=LAPSED + timedelta(minutes=1))
+
+    assert result.status == "confirmed"
+    booking.refresh_from_db()
+    assert booking.status == Status.CONFIRMED
+    assert booking.hold_expires_at is None
+    assert lock_keys(booking) == {("F", 12)}
+    # Re-claimed: the old locks were dropped and inserted again.
+    assert lock_ids(booking).isdisjoint(before)
 
 
 @pytest.mark.django_db
@@ -335,10 +404,66 @@ def test_race_two_confirmations_one_write(caplog):
     assert lock_keys(booking) == {("F", 12)}
 
 
-# check_checkout
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_race_second_confirmation_waits_on_the_row_lock(caplog):
+    """Deterministic: the other caller is held at the booking's row lock while this one records
+    the payment, so it must re-check under the lock and see `confirmed`."""
+    caplog.set_level(logging.INFO, logger="cb.payments")
+    booking = hold()
+    paid_session = session(booking)
+    results: list[ConfirmResult] = []
+    errors: list[BaseException] = []
+
+    def worker():
+        try:
+            results.append(confirm_payment(paid_session, now=NOW))
+        except BaseException as exc:  # surfaced in the main thread below
+            errors.append(exc)
+        finally:
+            connection.close()
+
+    other = threading.Thread(target=worker)
+    with transaction.atomic():
+        Booking.objects.select_for_update().get(pk=booking.pk)
+        other.start()
+        deadline = time.monotonic() + 10
+        blocked = False
+        with connection.cursor() as cursor:
+            while not blocked and time.monotonic() < deadline:
+                cursor.execute("select count(*) from pg_locks where not granted")
+                blocked = cursor.fetchone()[0] > 0
+                if not blocked:
+                    time.sleep(0.01)
+        mine = confirm_payment(paid_session, now=NOW)
+    other.join(timeout=10)
+
+    assert blocked, "the second confirmation never waited on the row lock"
+    assert not other.is_alive()
+    assert errors == []
+    assert mine.status == "confirmed"
+    assert [r.status for r in results] == ["confirmed"]
+    writes = [r for r in caplog.records if r.getMessage().startswith("payment.confirmed ")]
+    assert len(writes) == 1
+    booking.refresh_from_db()
+    assert booking.status == Status.CONFIRMED
+    assert lock_keys(booking) == {("F", 12)}
+
+
+# check_checkout: it refuses to run inside a transaction, and a plain `django_db` test runs in one,
+# so these tests use real transactions.
 
 
 @pytest.mark.django_db
+def test_check_inside_a_transaction_raises_before_calling_paymongo(monkeypatch):
+    factory, _ = mock_client(monkeypatch)
+    hold()
+
+    with transaction.atomic(), pytest.raises(RuntimeError, match="must not run inside"):
+        check_checkout(SESSION_ID)
+    factory.assert_not_called()
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 @pytest.mark.parametrize("session_id", [None, "", "bad", "cs_", "cs_x/../y", "cs_unknown"])
 def test_check_unknown_or_invalid_id_never_calls_paymongo(monkeypatch, session_id):
     factory, _ = mock_client(monkeypatch)
@@ -348,7 +473,7 @@ def test_check_unknown_or_invalid_id_never_calls_paymongo(monkeypatch, session_i
     factory.assert_not_called()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_check_confirms_through_paymongo(monkeypatch):
     factory, client = mock_client(monkeypatch)
     booking = hold()
@@ -363,7 +488,7 @@ def test_check_confirms_through_paymongo(monkeypatch):
     factory.return_value.__exit__.assert_called_once()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_check_unpaid_is_pending(monkeypatch):
     _, client = mock_client(monkeypatch)
     booking = hold()
@@ -372,7 +497,7 @@ def test_check_unpaid_is_pending(monkeypatch):
     assert check_checkout(SESSION_ID).status == "pending"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 @pytest.mark.parametrize("final", [Status.CONFIRMED, Status.NEEDS_REFUND])
 def test_check_final_status_skips_paymongo(monkeypatch, final):
     factory, _ = mock_client(monkeypatch)
@@ -386,7 +511,7 @@ def test_check_final_status_skips_paymongo(monkeypatch, final):
     factory.assert_not_called()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_check_rejected_is_not_found(monkeypatch):
     _, client = mock_client(monkeypatch)
     booking = hold()
@@ -399,7 +524,7 @@ def test_check_rejected_is_not_found(monkeypatch):
     assert booking.status == Status.PENDING
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_check_paymongo_error_is_unavailable(monkeypatch, caplog):
     _, client = mock_client(monkeypatch)
     hold()
@@ -415,7 +540,7 @@ def test_check_paymongo_error_is_unavailable(monkeypatch, caplog):
     assert_no_pii(caplog.text)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_check_missing_secret_key_is_unavailable(monkeypatch, caplog):
     monkeypatch.delenv("PAYMONGO_SECRET_KEY", raising=False)
     hold()
@@ -467,7 +592,6 @@ def test_release_survives_an_expire_failure(
     [
         (Status.CONFIRMED, "already_paid"),
         (Status.NEEDS_REFUND, "already_paid"),
-        (Status.EXPIRED, "released"),
         (Status.CANCELLED, "released"),
     ],
 )
@@ -485,6 +609,26 @@ def test_release_of_a_final_booking_changes_nothing(
     factory.assert_not_called()
     booking.refresh_from_db()
     assert booking.status == status
+
+
+@pytest.mark.django_db
+def test_release_of_a_lapsed_hold_still_expires_the_session(
+    monkeypatch, django_capture_on_commit_callbacks
+):
+    # The hold lapsed, but its checkout session could still take a payment.
+    _, client = mock_client(monkeypatch)
+    booking = hold()
+    holds.expire_stale_holds(now=LAPSED)
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        assert release_checkout(SESSION_ID) == "released"
+        client.expire_checkout_session.assert_not_called()
+
+    assert len(callbacks) == 1
+    client.expire_checkout_session.assert_called_once_with(SESSION_ID)
+    booking.refresh_from_db()
+    assert booking.status == Status.EXPIRED
+    assert lock_keys(booking) == set()
 
 
 @pytest.mark.django_db

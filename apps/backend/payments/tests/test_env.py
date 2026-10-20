@@ -69,11 +69,17 @@ def test_client_does_not_repeat_the_key_it_refused():
     assert SECRET_VALUE not in str(excinfo.value)
 
 
-WEBHOOK_SECRET = "whsk_testsecret"
+# At least 24 characters, built up so secret scanners don't flag it.
+WEBHOOK_SECRET = "whsk_" + "test" * 6
 
 
 def test_accepts_the_webhooks_secret():
     assert get_webhook_secret({"PAYMONGO_WEBHOOK_SECRET": WEBHOOK_SECRET}) == WEBHOOK_SECRET
+
+
+def test_accepts_a_webhook_secret_of_exactly_24_characters():
+    secret = "whsk_" + "x" * 19
+    assert get_webhook_secret({"PAYMONGO_WEBHOOK_SECRET": secret}) == secret
 
 
 def test_webhook_secret_does_not_need_the_api_key():
@@ -82,7 +88,23 @@ def test_webhook_secret_does_not_need_the_api_key():
 
 @pytest.mark.parametrize(
     "secret",
-    ["", "   ", "sk_test_abc123", "pk_test_abc123", "sk_live_abc123", " whsk_x", "whsk_x\n"],
+    [
+        "",
+        "   ",
+        "sk_test_abc123",
+        "pk_test_abc123",
+        "sk_live_abc123",
+        # An API key long enough to pass the length check.
+        "sk_test_" + "a" * 24,
+        "pk_test_" + "a" * 24,
+        " " + WEBHOOK_SECRET,
+        WEBHOOK_SECRET + "\n",
+        "whsk_" + "te st" * 6,
+        # The runbook's public placeholder, and anything else too short to be a signing secret.
+        "pending",
+        "whsk_x",
+        "whsk_" + "x" * 18,
+    ],
 )
 def test_refuses_an_api_key_or_blank_as_the_webhook_secret(secret):
     with pytest.raises(PaymentsConfigError) as excinfo:
@@ -96,6 +118,10 @@ def test_refuses_a_missing_webhook_secret_naming_the_key_but_not_a_value():
     with pytest.raises(PaymentsConfigError) as excinfo:
         get_webhook_secret({"PAYMONGO_WEBHOOK_SECRET": f"sk_test_{SECRET_VALUE}"})
     assert SECRET_VALUE not in str(excinfo.value)
+    with pytest.raises(PaymentsConfigError) as excinfo:
+        get_webhook_secret({"PAYMONGO_WEBHOOK_SECRET": SECRET_VALUE})
+    assert SECRET_VALUE not in str(excinfo.value)
+    assert SECRET_VALUE not in repr(excinfo.value)
 
 
 def test_payments_modules_import_with_an_empty_environment():

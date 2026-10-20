@@ -11,8 +11,9 @@ from collections.abc import Mapping
 TEST_SECRET_KEY = re.compile(r"^sk_test_[A-Za-z0-9]+$")
 
 # The webhook's own secret key, from the PayMongo dashboard's webhook page. An API key pasted by
-# mistake (`sk_…`, `pk_…`) fails.
-WEBHOOK_SECRET = re.compile(r"^(?![sp]k_)\S+$")
+# mistake (`sk_…`, `pk_…`) fails, and so does anything shorter than 24 characters, such as the
+# runbook's public `pending` placeholder: with it, anyone could sign a paid event.
+WEBHOOK_SECRET = re.compile(r"^(?![sp]k_)\S{24,}$")
 
 
 class PaymentsConfigError(Exception):
@@ -48,5 +49,5 @@ def get_webhook_secret(environ: Mapping[str, str] = os.environ) -> str:
         environ,
         "PAYMONGO_WEBHOOK_SECRET",
         WEBHOOK_SECRET,
-        "the PayMongo webhook's secret key, not an API key",
+        "the PayMongo webhook's secret key (24+ characters), not an API key",
     )
