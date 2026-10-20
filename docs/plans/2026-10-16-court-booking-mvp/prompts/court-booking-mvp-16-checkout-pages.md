@@ -87,6 +87,10 @@ only the cookie and never URL parameters.
     (test mode)."
   - `not_found`: "We couldn't find a booking in this browser." plus a link to `/booking`.
   - `unavailable`: "We couldn't check right now. Try again in a moment." plus "Check again".
+  - `expired` / `cancelled` (added in CBS-6: the hold lapsed or was released and no payment has arrived yet): "Your
+    hold ended before we received payment. If you completed payment, it may still go through." plus "Check again"
+    (`/book/success`) and a link back to `/book`. Never say the booking definitely wasn't made: a late payment (the
+    webhook can land seconds after the redirect) still confirms it or re-claims the slot.
 
   It **never reads `searchParams`**. A URL like `/book/success?status=paid` changes nothing.
 - **`app/book/cancelled/page.tsx`**: read the cookie, then `releaseCheckout(id)` (no cookie → treat as released). Map

@@ -48,8 +48,14 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - `release_checkout` re-checks status under `select_for_update` and never cancels a concurrently confirmed booking; it expires the PayMongo session via `on_commit`.
     - Unknown or live paid sessions log WARNING and are not refunded (the PayMongo account is shared with fun-run and local dev).
     - Deferred nits: `/webhooks/*` no-store on 404/400 raised outside the view; a JSON 405 (today `require_POST` returns a no-store HTML 405).
-- [ ] CBS-6 — Storefront API · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 12, 13 · depends: CBS-5 · model: opus
+- [x] CBS-6 — Storefront API · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 12, 13 · depends: CBS-5 · model: opus (merged 2026-10-20)
   - **Story:** Exposes the token-guarded JSON API the storefront calls (catalog, availability, booking, checkout, lookup), pinned by shared contract fixtures.
+  - **Result:** PR #8 (merge fc7ad11). `storefront` app under `/api/v1/`: `GET catalog` (0 queries), `GET availability`, `POST bookings` (hold + PayMongo session after commit), `POST checkout/confirm`, `POST checkout/release`, `POST bookings/lookup`; `require_service_token` (503 under 32 chars, constant time, no-store); 7 fixtures in `docs/api/fixtures/`, `docs/api/README.md`; 427 backend tests. Gate: CI + code-guardian (4 SFs + nits fixed; re-review APPROVE WITH NITS), then CI only on 6e7e200.
+  - **Downstream:**
+    - No new tables or env keys beyond `INTERNAL_API_TOKEN` (≥ 32 chars). Request bodies use `customer.name|email|mobile`; the web client forwards the visitor IP, which the backend's `client_ip` normalises (IPv6 keyed on /64).
+    - `checkout/confirm` answers `expired`/`cancelled` for a released or lapsed unpaid hold, not `pending`. Prompt 16 copy must say the payment "may still go through" and offer Check again (code-guardian SF, user choice). Take nullability from `docs/api/README.md`, not from the fixtures (prompt 14 Context).
+    - Invalid requests don't count against the rate limits; lookup 404s are identical for wrong reference and wrong email.
+    - Deferred: expire the orphaned PayMongo session when the session-id save fails; optional /48 bucket; unmatched `/api/v1/*` 404s lack no-store.
 - [ ] CBS-7 — Customer booking site · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 14, 15, 16, 17 · depends: CBS-6 · model: opus
   - **Story:** Builds the customer site: pick a sport, date, court and time, pay on PayMongo's test checkout, get a reference and look it up later. Adds the landing and privacy pages.
 - [ ] CBS-8 — Demo data and nightly job · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 18 · depends: CBS-7 · model: opus

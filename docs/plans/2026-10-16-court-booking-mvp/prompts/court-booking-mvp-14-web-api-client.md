@@ -49,6 +49,12 @@ two apps can't drift silently.
 - **`src/lib/api/schemas.ts`**: zod schemas and inferred types for `Catalog`, `Availability`, `BookingCreated`,
   `BookingSummary`, `CheckoutStatus`, `CheckoutRelease`, `BookingLookup` and `ApiErrorBody`. They must match the
   fixtures exactly. Use `z.enum` for sport, coverage, status and the checkout statuses. Prices are integer centavos.
+  As built in CBS-6 (see `docs/api/README.md`): the confirm statuses are `confirmed`, `pending`, `needs_refund`,
+  `not_found`, `unavailable`, **`expired` and `cancelled`** (a released hold with no payment); release returns
+  `released`, `already_paid` or `not_found`. `fields` names nested customer fields as `customer.name`,
+  `customer.email` and `customer.mobile`, and a non-object body as `body`. `sport` and `half` in `BookingSummary`
+  are nullable; timestamps are ISO-8601 with `+08:00`. Take every field's nullability from the README tables, not
+  from the fixtures (e.g. `hold_expires_at` is null in `checkout-status.json` but a string in `booking-lookup.json`).
 - **`src/lib/api/client.ts`**: starts with `import "server-only";`.
   - `class ApiError extends Error` with `status: number` and `code: string` (from the body's `error`, or `"unavailable"`).
     Its message never includes the request body.
