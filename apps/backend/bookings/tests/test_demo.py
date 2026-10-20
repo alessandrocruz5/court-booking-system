@@ -226,3 +226,22 @@ def test_plan_mix_and_illustrative_fees():
         "grab_pay": (220, 0),
         "card": (350, 1_500),
     }
+
+
+@pytest.mark.django_db
+def test_a_reference_clash_retries_instead_of_skipping(monkeypatch):
+    courts = list(Court.objects.filter(is_active=True).order_by("sort_order"))
+    first, second = [p for p in demo.plan(today=TODAY, courts=courts, rng=rng()) if p.person][:2]
+    references = iter(["KC-AAAAAA", "KC-AAAAAA", "KC-BBBBBB"])
+    monkeypatch.setattr(demo, "new_reference", lambda: next(references))
+
+    claimed = []
+    for p in (first, second):
+        fields, _ = demo._fields(p, now=NOW)
+        spaces = rules.spaces_for(p.court, p.coverage, p.half)
+        starts = rules.slot_starts(p.day, p.start_hour, p.hours)
+        claimed.append(demo._claim(fields, spaces, starts, now=NOW))
+
+    # The second booking's first reference clashed; it retried and was created, not skipped.
+    assert [b.reference for b in claimed] == ["KC-AAAAAA", "KC-BBBBBB"]
+    assert Booking.objects.filter(is_demo=True).count() == 2

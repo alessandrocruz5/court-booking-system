@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from django.db import IntegrityError, transaction
 
 from bookings import pricing, rules
-from bookings.holds import SlotTaken, claim_slots
+from bookings.holds import REFERENCE_ATTEMPTS, SlotTaken, claim_slots
 from bookings.models import Booking, Court
 from bookings.references import new_reference
 from bookings.rules import (
@@ -356,6 +356,30 @@ def _unpaid_real_keys(now: datetime) -> set[tuple[int, str, datetime]]:
     return keys
 
 
+def _claim(
+    fields: dict, spaces: list[str], starts: list[datetime], *, now: datetime
+) -> Booking | None:
+    """Create one demo booking and claim its slots, or return None if a slot is taken.
+
+    SlotTaken and a reference clash propagate out of the atomic(), so the booking row is rolled
+    back together with its locks: a skipped demo booking leaves nothing behind. A reference clash
+    (references are random, not seeded) retries with a fresh one, so the result stays a function
+    of the seed alone.
+    """
+    for attempt in range(REFERENCE_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                booking = Booking.objects.create(reference=new_reference(), **fields)
+                claim_slots(booking, spaces, starts, now=now)
+                return booking
+        except SlotTaken:
+            return None
+        except IntegrityError as exc:
+            if not _is_reference_clash(exc) or attempt == REFERENCE_ATTEMPTS - 1:
+                raise
+    raise AssertionError("unreachable")
+
+
 def generate(*, today: date, now: datetime, rng: random.Random) -> int:
     """Replace every demo booking with a fresh plan. Returns the number created. Safe to repeat."""
     with transaction.atomic():
@@ -373,18 +397,8 @@ def generate(*, today: date, now: datetime, rng: random.Random) -> int:
         if any((p.court.pk, space, start) in unpaid for space in spaces for start in starts):
             skipped += 1
             continue
-        # SlotTaken and a reference clash propagate out of this atomic(), so the booking row is
-        # rolled back together with its locks: a skipped demo booking leaves nothing behind.
-        try:
-            with transaction.atomic():
-                booking = Booking.objects.create(reference=new_reference(), **fields)
-                claim_slots(booking, spaces, starts, now=now)
-        except SlotTaken:
-            skipped += 1
-            continue
-        except IntegrityError as exc:
-            if not _is_reference_clash(exc):
-                raise
+        booking = _claim(fields, spaces, starts, now=now)
+        if booking is None:
             skipped += 1
             continue
         # `created_at` is auto_now_add, so the realistic value is written afterwards in bulk.
