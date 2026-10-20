@@ -54,7 +54,12 @@ Authorization: Bearer <INTERNAL_API_TOKEN>
 ## Rate limits
 
 Counted per client IP in Postgres, in fixed 10-minute windows, across all instances. The Next.js server sends the
-visitor's IP as `client_ip`.
+visitor's IP as `client_ip`, which is normalised before it is counted:
+
+- an IPv6 address is counted per /64 network (one subscriber's usual allocation), so every address in a /64 shares
+  one window;
+- an IPv4-mapped IPv6 address (`::ffff:203.0.113.10`) counts as its IPv4 address;
+- an address with a zone ID (`fe80::1%eth0`) is invalid (`400`, `client_ip` in `fields`).
 
 | Endpoint                       | Limit                | Over the limit                  |
 | ------------------------------ | -------------------- | ------------------------------- |
@@ -62,7 +67,8 @@ visitor's IP as `client_ip`.
 | `POST /api/v1/bookings/lookup` | 10 per IP per 10 min | `429 {"error": "rate_limited"}` |
 
 On top of that, one email may hold at most 2 unpaid holds that haven't lapsed; a third create answers
-`429 {"error": "too_many_holds"}`. Requests rejected as `invalid_request` are not counted.
+`429 {"error": "too_many_holds"}`. This limit is best effort: it counts the holds, then creates one, so concurrent
+requests can exceed it; the per-IP limit bounds by how much. Requests rejected as `invalid_request` are not counted.
 
 ## `GET /api/v1/catalog`
 
@@ -159,19 +165,19 @@ Create a 20-minute hold on a slot, then a PayMongo test checkout session for it.
 
 Validation (failures are listed in `fields`, in this order, by name only):
 
-| Field             | Rule                                                       |
-| ----------------- | ---------------------------------------------------------- |
-| `court`           | An active court `code`.                                    |
-| `sport`           | A catalog sport `id`.                                      |
-| `coverage`        | `full` or `half`.                                          |
-| `date`            | `YYYY-MM-DD`.                                              |
-| `start_hour`      | An integer.                                                |
-| `hours`           | An integer.                                                |
-| `customer.name`   | 2 to 80 characters after trimming.                         |
-| `customer.email`  | A valid email, at most 254 characters. Stored lowercased.  |
-| `customer.mobile` | `^(\+63\|0)9\d{9}$`, no spaces. Stored as `+639XXXXXXXXX`. |
-| `consent`         | Literally `true`. Its time is stored with the booking.     |
-| `client_ip`       | An IPv4 or IPv6 address.                                   |
+| Field             | Rule                                                          |
+| ----------------- | ------------------------------------------------------------- |
+| `court`           | An active court `code`.                                       |
+| `sport`           | A catalog sport `id`.                                         |
+| `coverage`        | `full` or `half`.                                             |
+| `date`            | `YYYY-MM-DD`.                                                 |
+| `start_hour`      | An integer.                                                   |
+| `hours`           | An integer.                                                   |
+| `customer.name`   | 2 to 80 characters after trimming.                            |
+| `customer.email`  | A valid email, at most 254 characters. Stored lowercased.     |
+| `customer.mobile` | `^(\+63\|0)9[0-9]{9}$`, no spaces. Stored as `+639XXXXXXXXX`. |
+| `consent`         | Literally `true`. Its time is stored with the booking.        |
+| `client_ip`       | An IPv4 or IPv6 address, without a zone ID.                   |
 
 Then the rate limits, then the booking rules (window, hours, coverage, court kind). The price is quoted on the
 server; a `price` or `status` in the body is ignored. Once the hold has committed, the backend creates the checkout
@@ -206,15 +212,19 @@ success page's URL is trusted.
 
 `status`:
 
-| Value          | `booking` | Meaning                                                                                               |
-| -------------- | --------- | ----------------------------------------------------------------------------------------------------- |
-| `confirmed`    | yes       | Paid and confirmed.                                                                                   |
-| `pending`      | yes       | The hold is live and no payment has arrived yet.                                                      |
-| `expired`      | yes       | The hold lapsed with no payment. A payment that still arrives later re-claims the slot if it is free. |
-| `cancelled`    | yes       | The hold was released from the cancel page, with no payment.                                          |
-| `needs_refund` | yes       | Paid after the hold lapsed and the slot was taken; staff refund it.                                   |
-| `not_found`    | null      | No booking has this session (or the session isn't ours).                                              |
-| `unavailable`  | null      | PayMongo or the database couldn't be reached; try again.                                              |
+| Value          | `booking` | Meaning                                                                          |
+| -------------- | --------- | -------------------------------------------------------------------------------- |
+| `confirmed`    | yes       | Paid and confirmed.                                                              |
+| `pending`      | yes       | The hold is live and no payment has arrived yet.                                 |
+| `expired`      | yes       | The hold lapsed and no payment has arrived, even before it is swept (see below). |
+| `cancelled`    | yes       | The hold was released from the cancel page, with no payment.                     |
+| `needs_refund` | yes       | Paid after the hold lapsed and the slot was taken; staff refund it.              |
+| `not_found`    | null      | No booking has this session (or the session isn't ours).                         |
+| `unavailable`  | null      | PayMongo or the database couldn't be reached; try again.                         |
+
+Holds lapse lazily: a lapsed hold stays `pending` in the database until a competing claim or the nightly job sweeps
+it. Confirm answers `expired` as soon as `hold_expires_at` has passed; `booking.status` shows the stored status, so
+it may still read `pending`. A payment that still arrives later re-claims the slot if it is free.
 
 ## `POST /api/v1/checkout/release`
 

@@ -166,6 +166,8 @@ def test_an_unknown_sport_names_the_field_without_its_value(client):
         ({"date": "2026-11-03", "sport": "tennis", "coverage": "quarter"}, ["coverage"]),
         ({"date": "2026-11-03", "sport": "tennis", "hours": "two"}, ["hours"]),
         ({"date": "2026-11-03", "sport": "tennis", "hours": "-1"}, ["hours"]),
+        # Arabic-Indic digits: `\d` would match them, and `int()` would accept them.
+        ({"date": "2026-11-03", "sport": "tennis", "hours": "٣"}, ["hours"]),
     ],
 )
 def test_bad_fields_are_named_in_order(client, params, fields):

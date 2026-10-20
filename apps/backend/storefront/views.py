@@ -31,11 +31,12 @@ from payments.paymongo import PayMongoError, get_client
 from .auth import json_response, require_service_token
 from .payloads import availability_payload, booking_summary, catalog_payload, iso_local
 
-_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-_HOURS = re.compile(r"\d{1,2}")
+# `[0-9]`, not `\d`: `\d` matches any Unicode digit.
+_ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_HOURS = re.compile(r"[0-9]{1,2}")
 
 MAX_BODY_BYTES = 4096
-_MOBILE = re.compile(r"(\+63|0)(9\d{9})")
+_MOBILE = re.compile(r"(\+63|0)(9[0-9]{9})")
 _EMAIL_MAX_LENGTH = 254
 _NAME_LENGTH = (2, 80)
 
@@ -45,6 +46,8 @@ LOOKUP_LIMIT = 10
 WINDOW_SECONDS = 600
 # Unexpired pending holds one email may have before another create is refused.
 MAX_ACTIVE_HOLDS = 2
+# Final statuses of a hold released without a payment.
+_RELEASED = (Status.EXPIRED, Status.CANCELLED)
 
 
 @require_service_token
@@ -126,12 +129,20 @@ def _is_int(value) -> bool:
 
 
 def _client_ip(value) -> str | None:
-    if not isinstance(value, str):
+    """The rate-limit key for a client IP: an IPv4 address, or an IPv6 address's /64 (one
+    subscriber's usual allocation). An IPv4-mapped IPv6 address counts as its IPv4 address; a zone
+    ID (`fe80::1%eth0`) is invalid."""
+    if not isinstance(value, str) or "%" in value:
         return None
     try:
-        return str(ipaddress.ip_address(value.strip()))
+        address = ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is None:
+            return str(ipaddress.ip_network(f"{address}/64", strict=False))
+        address = address.ipv4_mapped
+    return str(address)
 
 
 def _text(value) -> str | None:
@@ -266,7 +277,7 @@ def create_booking(request):
     except BookingRuleError as error:
         return json_response({"error": error.code}, status=400)
 
-    # Outside any transaction: the hold has committed.
+    # Outside any transaction: the hold has committed. Any failure from here frees the slot.
     try:
         with get_client() as client:
             session = client.create_checkout_session(
@@ -277,13 +288,17 @@ def create_booking(request):
                 success_url=f"{settings.SITE_URL}/book/success",
                 cancel_url=f"{settings.SITE_URL}/book/cancelled",
             )
+        booking.checkout_session_id = session.id
+        booking.save(update_fields=["checkout_session_id", "updated_at"])
     except (PayMongoError, PaymentsConfigError) as error:
         release(booking, status=Status.EXPIRED)
         log_error("booking.checkout_failed", error, ref=booking.reference)
         return json_response({"error": "payments_unavailable"}, status=503)
+    except Exception as error:
+        release(booking, status=Status.EXPIRED)
+        log_error("booking.checkout_failed", error, ref=booking.reference)
+        raise
 
-    booking.checkout_session_id = session.id
-    booking.save(update_fields=["checkout_session_id", "updated_at"])
     return json_response(
         {
             "reference": booking.reference,
@@ -318,17 +333,13 @@ def checkout_confirm(request):
     result = check_checkout(session_id)
     status = result.status
     booking = result.booking
-    if (
-        status == "pending"
-        and booking is not None
-        and booking.status
-        in (
-            Status.EXPIRED,
-            Status.CANCELLED,
-        )
-    ):
-        # No paid payment, and the hold is gone: say so, rather than "still processing".
-        status = str(booking.status)
+    # No paid payment, and the hold is gone or has lapsed: say so, rather than "still processing".
+    # Holds expire lazily, so a lapsed one may still be `pending` until it is swept.
+    if status == "pending" and booking is not None:
+        if booking.status in _RELEASED:
+            status = str(booking.status)
+        elif booking.status == Status.PENDING and booking.hold_expires_at <= timezone.now():
+            status = str(Status.EXPIRED)
     return json_response(
         {"status": status, "booking": None if booking is None else booking_summary(booking)}
     )

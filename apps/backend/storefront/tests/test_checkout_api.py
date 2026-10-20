@@ -130,20 +130,32 @@ def test_confirm_without_a_booking_answers_null(client, monkeypatch, result, exp
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("final", [Status.EXPIRED, Status.CANCELLED])
-def test_confirm_reports_a_lapsed_or_cancelled_hold(client, monkeypatch, final):
+@pytest.mark.parametrize(
+    ("final", "stored"),
+    [
+        pytest.param(Status.EXPIRED, Status.EXPIRED, id="expired"),
+        pytest.param(Status.CANCELLED, Status.CANCELLED, id="cancelled"),
+        pytest.param(None, Status.PENDING, id="lapsed-not-swept"),
+    ],
+)
+def test_confirm_reports_a_lapsed_or_cancelled_hold(client, monkeypatch, final, stored):
     """`check_checkout` says `pending` for a released hold with no paid payment; the page must
-    not keep saying "still processing"."""
+    not keep saying "still processing". Holds expire lazily, so a lapsed hold may still be
+    stored as `pending`."""
     booking = make_hold()
-    holds.release(booking, status=final)
+    if final is None:
+        Booking.objects.filter(pk=booking.pk).update(hold_expires_at=timezone.now())
+        booking.refresh_from_db()
+    else:
+        holds.release(booking, status=final)
     monkeypatch.setattr(
         views, "check_checkout", MagicMock(return_value=CheckResult("pending", booking))
     )
 
     response = post(client, "/api/v1/checkout/confirm", {"checkout_session_id": SESSION_ID})
 
-    assert response.json()["status"] == final
-    assert response.json()["booking"]["status"] == final
+    assert response.json()["status"] == (final or Status.EXPIRED)
+    assert response.json()["booking"]["status"] == stored
 
 
 @pytest.mark.django_db
@@ -155,6 +167,7 @@ def test_confirm_keeps_pending_for_a_live_hold(client, monkeypatch):
 
     response = post(client, "/api/v1/checkout/confirm", {"checkout_session_id": SESSION_ID})
 
+    assert booking.hold_expires_at > timezone.now()
     assert response.json()["status"] == "pending"
 
 
@@ -302,6 +315,19 @@ def test_eleventh_lookup_from_one_ip_is_rate_limited(client, pinned_clock):
     assert response.json() == {"error": "rate_limited"}
     # Another IP has its own window.
     assert lookup(client, reference=booking.reference, client_ip="198.51.100.8").status_code == 200
+
+
+@pytest.mark.django_db
+def test_lookups_from_one_ipv6_64_share_a_window(client, pinned_clock):
+    booking = make_hold()
+    for n in range(10):
+        response = lookup(client, reference=booking.reference, client_ip=f"2001:db8:7:8::{n + 1:x}")
+        assert response.status_code == 200
+
+    response = lookup(client, reference=booking.reference, client_ip="2001:db8:7:8:abcd::1")
+
+    assert response.status_code == 429
+    assert response.json() == {"error": "rate_limited"}
 
 
 @pytest.mark.django_db

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from django.db import IntegrityError, connection
 from django.utils import timezone
 
 from bookings import pricing, rules
@@ -215,6 +216,75 @@ def test_sixth_create_from_one_ip_is_rate_limited(client, fake, monkeypatch):
     assert Booking.objects.count() == 5
 
 
+def create_five(client, ips) -> None:
+    """Five creates on distinct courts and emails, from the given IPs in turn."""
+    for n in range(1, 6):
+        response = post(
+            client,
+            booking_body(
+                court=f"mp-{n:02d}",
+                sport="badminton",
+                customer=customer(email=f"p{n}@example.com"),
+                client_ip=ips[n % len(ips)],
+            ),
+        )
+        assert response.status_code == 201
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "ips",
+    [
+        pytest.param(("2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:fffe"), id="one-ipv6-64"),
+        pytest.param(("::ffff:203.0.113.10", "203.0.113.10"), id="ipv4-mapped"),
+    ],
+)
+def test_addresses_of_one_client_share_the_create_window(client, fake, monkeypatch, ips):
+    pin_ratelimit_clock(monkeypatch)
+    create_five(client, ips)
+
+    response = post(
+        client,
+        booking_body(
+            court="mp-06",
+            sport="badminton",
+            customer=customer(email="p6@example.com"),
+            client_ip=ips[0],
+        ),
+    )
+
+    assert response.status_code == 429
+    assert response.json() == {"error": "rate_limited"}
+
+
+@pytest.mark.django_db
+def test_another_ipv6_64_has_its_own_window(client, fake, monkeypatch):
+    pin_ratelimit_clock(monkeypatch)
+    create_five(client, ("2001:db8:1:2::1",))
+
+    response = post(
+        client,
+        booking_body(
+            court="mp-06",
+            sport="badminton",
+            customer=customer(email="p6@example.com"),
+            client_ip="2001:db8:1:3::1",
+        ),
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("client_ip", ["fe80::1%eth0", "fe80::1%1", "203.0.113.10%1"])
+def test_an_ip_with_a_zone_id_is_invalid(client, fake, client_ip):
+    response = post(client, booking_body(client_ip=client_ip))
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "invalid_request", "fields": ["client_ip"]}
+    assert not fake.calls
+
+
 @pytest.mark.django_db
 def test_third_active_hold_for_one_email_is_refused(client, fake, monkeypatch):
     pin_ratelimit_clock(monkeypatch)
@@ -257,6 +327,16 @@ def test_a_bad_mobile_is_named_but_never_echoed(client, fake):
     assert response.json() == {"error": "invalid_request", "fields": ["customer.mobile"]}
     assert bad_mobile not in response.content.decode()
     assert NAME not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_a_mobile_with_non_ascii_digits_is_invalid(client, fake):
+    # Arabic-Indic digits: `\d` would match them.
+    response = post(client, booking_body(customer=customer(mobile="09١٢٣٤٥٦٧٨٩")))
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "invalid_request", "fields": ["customer.mobile"]}
+    assert not Booking.objects.exists()
 
 
 @pytest.mark.django_db
@@ -398,3 +478,56 @@ def test_missing_paymongo_config_frees_the_slot(client, monkeypatch, caplog):
     assert response.json() == {"error": "payments_unavailable"}
     assert Booking.objects.get().status == Status.EXPIRED
     assert "key=PAYMONGO_SECRET_KEY" in caplog.text
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_paymongo_is_called_outside_a_transaction_after_the_hold_commits(client, monkeypatch):
+    seen = {}
+
+    class Recording(FakePayMongo):
+        def create_checkout_session(self, **kwargs):
+            seen["in_atomic_block"] = connection.in_atomic_block
+            seen["booking_exists"] = Booking.objects.filter(pk=kwargs["booking_id"]).exists()
+            return super().create_checkout_session(**kwargs)
+
+    monkeypatch.setattr(views, "get_client", Recording())
+
+    assert post(client, booking_body()).status_code == 201
+    assert seen == {"in_atomic_block": False, "booking_exists": True}
+
+
+@pytest.mark.django_db
+def test_an_unexpected_checkout_error_frees_the_slot_and_propagates(client, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    use_fake_paymongo(monkeypatch, RuntimeError("boom"))
+
+    with pytest.raises(RuntimeError):
+        post(client, booking_body())
+
+    failed = Booking.objects.get()
+    assert failed.status == Status.EXPIRED
+    assert not SlotLock.objects.filter(booking=failed).exists()
+    assert f"booking.checkout_failed ref={failed.reference} error=RuntimeError" in caplog.text
+
+    use_fake_paymongo(monkeypatch)
+    assert post(client, booking_body()).status_code == 201
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_a_failed_save_of_the_session_id_frees_the_slot(client, monkeypatch, caplog):
+    """The session ID column is unique: a second fake hands out `cs_test123` again, so saving it
+    fails after the checkout session exists."""
+    caplog.set_level(logging.INFO)
+    use_fake_paymongo(monkeypatch)
+    assert post(client, booking_body()).status_code == 201
+    use_fake_paymongo(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        post(client, booking_body(court="tn-2"))
+
+    failed = Booking.objects.get(court__code="tn-2")
+    assert failed.status == Status.EXPIRED
+    assert not SlotLock.objects.filter(booking=failed).exists()
+    assert f"booking.checkout_failed ref={failed.reference} error=IntegrityError" in caplog.text
+    for pii in (EMAIL, NAME, MOBILE):
+        assert pii not in caplog.text
