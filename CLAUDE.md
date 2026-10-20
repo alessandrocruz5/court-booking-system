@@ -32,6 +32,8 @@ pnpm typecheck
 docker compose up -d --wait db
 pnpm test
 pnpm build
+docker build -f apps/web/Dockerfile -t cb-web:local .
+docker build -t cb-backend:local apps/backend
 ```
 
 Prerequisites: Node 24 with `corepack enable`, uv, Docker. `pnpm test` needs the `db` service (Postgres 17 on
