@@ -148,6 +148,7 @@ gcloud config set project "$PROJECT_ID"
 
    ```sh
    PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+   GITHUB_REPO="$(gh api "repos/$GITHUB_REPO" --jq .full_name)"  # exact case, as workflow_ref spells it
    REPO_ID="$(gh api "repos/$GITHUB_REPO" --jq .id)"
    OWNER_ID="$(gh api "repos/$GITHUB_REPO" --jq .owner.id)"
    gcloud iam workload-identity-pools create github --location global --display-name "GitHub Actions"
@@ -249,8 +250,10 @@ roll back to.
 
    ```sh
    gcloud run services update-traffic cb-backend --region asia-southeast1 --to-latest
-   gcloud artifacts docker tags delete "${IMAGE%:*}:keep-rollback"
+   gcloud artifacts docker tags delete "asia-southeast1-docker.pkg.dev/$PROJECT_ID/cb/backend:keep-rollback"
    ```
+
+   The same for `cb-web` (its tag is `…/cb/web:keep-rollback`), if you rolled it back too.
 
 ## Secret exposure
 
