@@ -4,7 +4,7 @@ Steps, each logged with counts only (never row contents) under `cb.nightly`:
 
 1. Expire stale payment holds.
 2. Anonymize visitor bookings RETENTION_DAYS after they end (RA 10173; `/privacy` promises it).
-3. Prune rate-limit counters (windows last at most 10 minutes; `/privacy` promises within a day).
+3. Prune rate-limit counters whose window has ended (`/privacy` promises within a day).
 4. Clear expired sessions.
 5. Regenerate the demo bookings, only when ALLOW_DEMO_SEED=1.
 
@@ -32,7 +32,9 @@ logger = logging.getLogger("cb.nightly")
 
 # Must match RETENTION_DAYS in apps/web/src/content/site.ts, which /privacy states.
 RETENTION_DAYS = 7
-RATE_LIMIT_MAX_AGE = timedelta(hours=1)
+# The longest rate-limit window (storefront WINDOW_SECONDS): only a window still open at run time
+# survives to the next run, so every counter is gone within a day and a few minutes.
+RATE_LIMIT_MAX_AGE = timedelta(minutes=10)
 
 
 def anonymize(*, now: datetime) -> int:

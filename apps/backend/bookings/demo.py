@@ -4,8 +4,9 @@
 memory (a pure function of `today`, the courts and `rng`), then claims each one through
 `claim_slots` in its own transaction. The plan only keeps demo bookings from overlapping each
 other; the `SlotLock` constraint still decides every slot, so a demo booking that clashes with a
-real one is skipped and the real booking wins. Non-demo bookings are never read, changed or
-deleted here.
+real one is skipped and the real booking wins. Demo bookings also stay off the slots of real
+unpaid online bookings that haven't started, so a late payment can still re-claim them. Non-demo
+bookings are read for that and never changed or deleted here.
 
 Demo rows carry the markers the dashboard and the anonymizer rely on: `is_demo`, `@example.com`
 emails and `+63900000xxxx` mobiles. Logs carry counts only.
@@ -334,6 +335,27 @@ def _is_reference_clash(exc: IntegrityError) -> bool:
     return "reference" in (getattr(diag, "constraint_name", None) or "")
 
 
+def _unpaid_real_keys(now: datetime) -> set[tuple[int, str, datetime]]:
+    """(court, space, hour) keys of real online bookings that are unpaid (pending, or expired
+    after a lapsed hold) and haven't started. A late payment re-claims exactly these keys
+    (`holds.reacquire`), so a demo booking must neither take them first nor lazily expire a lapsed
+    real hold. This read only stops demo claims; the `SlotLock` constraint still decides every
+    slot a booking gets."""
+    keys: set[tuple[int, str, datetime]] = set()
+    unpaid = Booking.objects.filter(
+        is_demo=False,
+        source=Source.ONLINE,
+        status__in=(Status.PENDING, Status.EXPIRED),
+        starts_at__gt=now,
+    ).select_related("court")
+    for b in unpaid:
+        spaces = rules.spaces_for(b.court, b.coverage, b.half)
+        for hour in range(b.hours):
+            start = b.starts_at + timedelta(hours=hour)
+            keys.update((b.court_id, space, start) for space in spaces)
+    return keys
+
+
 def generate(*, today: date, now: datetime, rng: random.Random) -> int:
     """Replace every demo booking with a fresh plan. Returns the number created. Safe to repeat."""
     with transaction.atomic():
@@ -341,12 +363,16 @@ def generate(*, today: date, now: datetime, rng: random.Random) -> int:
     deleted = per_model.get(Booking._meta.label, 0)
 
     courts = list(Court.objects.filter(is_active=True).order_by("sort_order"))
+    unpaid = _unpaid_real_keys(now)
     created: list[Booking] = []
     skipped = 0
     for p in plan(today=today, courts=courts, rng=rng):
         fields, created_at = _fields(p, now=now)
         spaces = rules.spaces_for(p.court, p.coverage, p.half)
         starts = rules.slot_starts(p.day, p.start_hour, p.hours)
+        if any((p.court.pk, space, start) in unpaid for space in spaces for start in starts):
+            skipped += 1
+            continue
         # SlotTaken and a reference clash propagate out of this atomic(), so the booking row is
         # rolled back together with its locks: a skipped demo booking leaves nothing behind.
         try:

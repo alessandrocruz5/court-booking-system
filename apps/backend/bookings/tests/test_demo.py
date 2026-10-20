@@ -5,6 +5,7 @@ import random
 from datetime import date, datetime, time, timedelta
 
 import pytest
+from django.db import transaction
 
 from bookings import demo, holds, rules
 from bookings.models import Booking, Court, SlotLock
@@ -135,6 +136,29 @@ def test_real_booking_keeps_its_slot_and_a_skipped_demo_booking_leaves_nothing()
         now=NOW,
     )
     starts_at = rules.slot_starts(target.day, target.start_hour, 1)[0]
+    # A real online hold that lapsed before the run, on another planned demo slot: its customer may
+    # still pay late, so the seed must neither expire it nor take its slot.
+    late = next(
+        p
+        for p in planned
+        if p.court.kind == CourtKind.TENNIS
+        and p.source == Source.ONLINE
+        and p.day > TODAY
+        and (p.court, p.day) != (target.court, target.day)
+    )
+    lapsed = holds.create_hold(
+        court=late.court,
+        sport=late.sport,
+        coverage=late.coverage,
+        day=late.day,
+        start_hour=late.start_hour,
+        hours=1,
+        customer=holds.Customer(
+            name="Late Payer", email="late.payer@example.com", mobile="+639000000002"
+        ),
+        now=NOW - timedelta(minutes=rules.HOLD_MINUTES + 10),
+    )
+    late_starts_at = rules.slot_starts(late.day, late.start_hour, 1)[0]
     old_demo = holds.create_staff_booking(
         source=Source.BLOCK,
         court=courts[-1],
@@ -157,8 +181,18 @@ def test_real_booking_keeps_its_slot_and_a_skipped_demo_booking_leaves_nothing()
     assert set(SlotLock.objects.filter(court=target.court, starts_at=starts_at)) == set(
         real.locks.all()
     )
-    # The clashing demo booking was skipped and left no booking row (nor locks) behind.
-    assert count == len(planned) - 1
+    # The lapsed hold is untouched and keeps its slot free of demo bookings, so a late payment can
+    # still re-claim it.
+    lapsed.refresh_from_db()
+    assert lapsed.status == Status.PENDING
+    assert set(SlotLock.objects.filter(court=late.court, starts_at=late_starts_at)) == set(
+        lapsed.locks.all()
+    )
+    with transaction.atomic():
+        assert holds.reacquire(lapsed, now=NOW)
+
+    # The clashing demo bookings were skipped and left no booking row (nor locks) behind.
+    assert count == len(planned) - 2
     assert Booking.objects.filter(is_demo=True).count() == count
     assert not Booking.objects.filter(is_demo=True, locks__isnull=True).exists()
     assert not Booking.objects.filter(
@@ -167,7 +201,7 @@ def test_real_booking_keeps_its_slot_and_a_skipped_demo_booking_leaves_nothing()
 
     # Regenerating deleted the old demo rows, and only those.
     assert not Booking.objects.filter(pk=old_demo.pk).exists()
-    assert Booking.objects.filter(is_demo=False).get() == real
+    assert set(Booking.objects.filter(is_demo=False)) == {real, lapsed}
 
 
 def test_plan_mix_and_illustrative_fees():

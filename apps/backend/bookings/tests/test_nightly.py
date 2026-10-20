@@ -77,8 +77,27 @@ def test_visitor_data_is_anonymized_seven_days_after_the_booking_ends(court):
     old = booking(court=court, ended_days_ago=8)
     recent = booking(court=court, ended_days_ago=6)
     demo_row = booking(court=court, ended_days_ago=8, is_demo=True)
+    # Every status and source is anonymized, not only paid online bookings.
+    walk_in = booking(
+        court=court, ended_days_ago=8, source=Source.WALK_IN, payment_id="", payment_method="cash"
+    )
+    expired = booking(
+        court=court,
+        ended_days_ago=9,
+        status=Status.EXPIRED,
+        payment_id="",
+        fee_centavos=None,
+        net_centavos=None,
+        paid_at=None,
+        hold_expires_at=NOW - timedelta(days=10),
+    )
 
     assert nightly.run(now=NOW) == 0
+
+    for row in (walk_in, expired):
+        row.refresh_from_db()
+        assert (row.customer_name, row.customer_email, row.customer_mobile) == ("", None, None)
+        assert row.anonymized_at == NOW
 
     old.refresh_from_db()
     assert (old.customer_name, old.customer_email, old.customer_mobile) == ("", None, None)
