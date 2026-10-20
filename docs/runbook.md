@@ -290,8 +290,9 @@ DML only: no DDL, and `django_migrations` is read-only to it), and Cloud Run con
 it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges and before CBS-6 or CBS-7 deploy.
 
 1. Run the migrations from the laptop only, as the owner, over the **direct** endpoint (the host without `-pooler`).
-   Export `MIGRATE_DATABASE_URL` in the shell (the string from `## Neon (once)`, step 3) for the branch being
-   migrated, then, from `apps/backend`:
+   Export `MIGRATE_DATABASE_URL` in the shell for the branch being migrated: for `main`, the string from
+   `## Neon (once)`, step 3; for `dev`, the same owner string with the `dev` branch selected in Neon → Connect (keep
+   it in the shell only). Then, from `apps/backend`:
 
    ```sh
    DATABASE_URL="$MIGRATE_DATABASE_URL" uv run python manage.py migrate
@@ -301,9 +302,10 @@ it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges
    tables the owner creates, so a table created by any other role is invisible to the app. Migrations are additive
    (expand/contract), and an applied migration is never edited.
 
-2. Create the runtime login once per branch, in `psql "$MIGRATE_DATABASE_URL"` (as the owner). **Never create it in
-   the Neon Console**, which makes console roles members of `neon_superuser`. Generate the password with
-   `openssl rand -hex 32` (hex needs no escaping in a URL):
+2. Create the runtime login once per branch, in `PSQL_HISTORY=/dev/null psql "$MIGRATE_DATABASE_URL"` (as the owner;
+   the history override keeps the password out of `~/.psql_history`). **Never create it in the Neon Console**, which
+   makes console roles members of `neon_superuser`. Generate the password with `openssl rand -hex 32` (hex needs no
+   escaping in a URL):
 
    ```sql
    CREATE ROLE cb_app_login LOGIN PASSWORD '<password>' IN ROLE cb_app;
@@ -330,11 +332,15 @@ it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges
    gcloud secrets versions destroy <old-version> --secret cb-database-url
    ```
 
-4. Check the runtime role has no DDL. With `DATABASE_URL` set to `cb_app_login`'s connection string, this must fail
-   with `permission denied for schema public`:
+4. Check the runtime role, on each branch. Paste `cb_app_login`'s connection string at the silent prompt. The first
+   query must print `18` (the grants work), and the second must fail with `permission denied for schema public`
+   (no DDL):
 
    ```sh
+   read -rs DATABASE_URL
+   psql "$DATABASE_URL" -c "SELECT count(*) FROM bookings_court"
    psql "$DATABASE_URL" -c "CREATE TABLE x(id int)"
+   unset DATABASE_URL
    ```
 
 The reverse of `0002_app_role` revokes `cb_app`'s grants but keeps the role: roles are cluster-wide, and other

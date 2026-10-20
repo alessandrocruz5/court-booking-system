@@ -7,6 +7,7 @@ import pytest
 from django.db import connection, transaction
 
 from bookings import holds, references, rules
+from bookings.availability import availability
 from bookings.holds import Customer, SlotTaken
 from bookings.models import Booking, Court, SlotLock
 from bookings.rules import BookingRuleError, Status
@@ -215,6 +216,24 @@ def test_release_confirmed_and_bad_status():
 
 
 @pytest.mark.django_db
+def test_release_as_expired_only_from_pending():
+    confirmed = staff("tn-1", sport="tennis")
+    with pytest.raises(ValueError):
+        holds.release(confirmed, status="expired", now=NOW)
+    confirmed.refresh_from_db()
+    assert confirmed.status == Status.CONFIRMED
+    assert lock_keys(confirmed) == {("F", 12)}
+
+    pending = hold("tn-2", "tennis")
+    assert holds.release(pending, status="expired", now=NOW) is True
+    pending.refresh_from_db()
+    assert pending.status == Status.EXPIRED
+    assert lock_keys(pending) == set()
+    # Already final: still idempotent.
+    assert holds.release(pending, status="expired", now=NOW) is False
+
+
+@pytest.mark.django_db
 def test_expire_stale_holds_bulk_expires_and_frees_slots():
     a = hold("tn-1", "tennis")
     b = hold("bb-1", "basketball")
@@ -276,6 +295,73 @@ def test_reacquire_refuses_staff_or_final_bookings():
         holds.reacquire(booking, now=NOW)
 
 
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_reacquire_outside_atomic_raises():
+    booking = hold("tn-1", "tennis")
+    holds.expire_stale_holds(now=LAPSED)
+    booking.refresh_from_db()
+
+    with pytest.raises(RuntimeError):
+        holds.reacquire(booking, now=LAPSED)
+    assert lock_keys(booking) == set()
+
+
+@pytest.mark.django_db
+def test_reacquire_judges_the_locked_row_not_the_callers_copy():
+    booking = hold("tn-1", "tennis")
+    holds.expire_stale_holds(now=LAPSED)
+    booking.refresh_from_db()
+    assert booking.status == Status.EXPIRED
+    # Cancelled meanwhile; the caller's object still says expired.
+    Booking.objects.filter(pk=booking.pk).update(status=Status.CANCELLED)
+
+    with pytest.raises(ValueError):
+        holds.reacquire(booking, now=LAPSED)
+    assert SlotLock.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_reacquire_refuses_a_slot_that_has_started(caplog):
+    caplog.set_level(logging.INFO, logger="cb.bookings")
+    booking = hold("tn-1", "tennis")
+    holds.expire_stale_holds(now=LAPSED)
+    booking.refresh_from_db()
+
+    assert holds.reacquire(booking, now=booking.starts_at) is False
+    assert holds.reacquire(booking, now=booking.starts_at + timedelta(minutes=5)) is False
+    assert SlotLock.objects.count() == 0
+    booking.refresh_from_db()
+    assert booking.status == Status.EXPIRED
+    assert f"hold.reacquire_failed ref={booking.reference}" in caplog.text
+
+
+def tennis_hours(court_code: str, now: datetime) -> list[int]:
+    result = availability(day=TOMORROW, sport="tennis", coverage="full", hours=1, now=now)
+    (court,) = [c for c in result if c.code == court_code]
+    return [start.hour for start in court.starts]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("final", [Status.EXPIRED, Status.CANCELLED, Status.NEEDS_REFUND])
+def test_claim_clears_leftover_locks_of_a_final_booking(final):
+    leftover = hold("tn-1", "tennis", start_hour=12, hours=2)
+    # A final booking that still owns locks (it should never happen; the claim must recover).
+    Booking.objects.filter(pk=leftover.pk).update(status=final)
+    assert lock_keys(leftover) == {("F", 12), ("F", 13)}
+
+    # availability() ignores the leftover locks, and a claim agrees.
+    assert {12, 13} <= set(tennis_hours("tn-1", NOW))
+    fresh = hold("tn-1", "tennis", start_hour=13)
+
+    leftover.refresh_from_db()
+    assert leftover.status == final
+    assert lock_keys(leftover) == set()
+    assert lock_keys(fresh) == {("F", 13)}
+    hours = tennis_hours("tn-1", NOW)
+    assert 13 not in hours
+    assert 12 in hours
+
+
 @pytest.mark.django_db
 def test_walk_in_is_confirmed_and_priced_in_cash():
     booking = staff("bb-1", coverage="half", half="B")
@@ -301,6 +387,15 @@ def test_block_on_basketball_locks_both_halves():
 
     with pytest.raises(SlotTaken):
         hold("bb-1", "basketball", "half")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("half", [None, "", "C"])
+def test_half_walk_in_without_a_half_is_a_rule_error(half):
+    with pytest.raises(BookingRuleError) as info:
+        staff("bb-1", coverage="half", half=half)
+    assert info.value.code == "coverage_not_allowed"
+    assert Booking.objects.count() == 0
 
 
 @pytest.mark.django_db

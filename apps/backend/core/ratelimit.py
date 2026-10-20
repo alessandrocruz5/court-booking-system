@@ -3,6 +3,8 @@
 Each hit is one atomic upsert on `core_ratelimit`, so concurrent requests on any instance count
 correctly; Django's cache framework is per-process and isn't atomic across instances. The row key
 is the scope plus an HMAC of the identifier: the raw IP or email is never stored (RA 10173).
+The window only moves forward: a hit stamped in an older window (an instance whose clock lags)
+counts against the newer one instead of resetting it.
 
 Database errors propagate: the caller decides whether to fail open or closed. Never log `ident`.
 """
@@ -20,9 +22,9 @@ from .models import RateLimit
 _HIT_SQL = """
 INSERT INTO core_ratelimit (key, window_start, count) VALUES (%s, %s, 1)
 ON CONFLICT (key) DO UPDATE SET
-  count = CASE WHEN core_ratelimit.window_start = EXCLUDED.window_start
+  count = CASE WHEN core_ratelimit.window_start >= EXCLUDED.window_start
                THEN core_ratelimit.count + 1 ELSE 1 END,
-  window_start = EXCLUDED.window_start
+  window_start = GREATEST(core_ratelimit.window_start, EXCLUDED.window_start)
 RETURNING count
 """
 

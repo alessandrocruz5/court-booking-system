@@ -30,6 +30,19 @@ def test_new_window_resets_count():
 
 
 @pytest.mark.django_db
+def test_hit_from_a_lagging_clock_counts_in_the_newer_window():
+    newer = NOW + timedelta(seconds=60)
+    assert ratelimit.hit("signin", IP, limit=2, window_seconds=60, now=newer)
+    # Another instance whose clock is still in the previous window.
+    assert ratelimit.hit("signin", IP, limit=2, window_seconds=60, now=NOW)
+    assert not ratelimit.hit("signin", IP, limit=2, window_seconds=60, now=NOW)
+
+    row = RateLimit.objects.get()
+    assert row.count == 3
+    assert row.window_start == datetime(2026, 11, 2, 9, 1, tzinfo=UTC)
+
+
+@pytest.mark.django_db
 def test_window_is_floored_to_epoch_multiple():
     ratelimit.hit("signin", IP, limit=1, window_seconds=60, now=NOW)
 

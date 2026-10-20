@@ -20,9 +20,10 @@ from django.db.models import Q
 from django.utils import timezone
 
 from bookings import pricing, rules
+from bookings.availability import active_locks_q
 from bookings.models import Booking, Court, SlotLock
 from bookings.references import new_reference
-from bookings.rules import HOLD_MINUTES, Coverage, Half, Source, Status
+from bookings.rules import HOLD_MINUTES, BookingRuleError, Coverage, Half, Source, Status
 
 logger = logging.getLogger("cb.bookings")
 
@@ -58,26 +59,36 @@ def claim_slots(
         raise RuntimeError("claim_slots must run inside transaction.atomic()")
     keys = reduce(or_, (Q(space=space, starts_at=start) for space in spaces for start in starts))
 
-    # Lazily expire stale holds sitting on exactly these keys. Lock the bookings in pk order so
-    # two concurrent claims never wait on each other in opposite orders; the status/expiry filter
-    # is re-checked under the lock, so a hold another claim already expired is skipped.
+    # Clear stale locks sitting on exactly these keys: any lock `availability()` ignores (its
+    # booking is not active per `active_locks_q`), so a claim and availability never disagree.
+    # Lock the owning bookings in pk order so two concurrent claims never wait on each other in
+    # opposite orders, then re-check under the lock, so a booking another transaction expired,
+    # confirmed or re-acquired meanwhile is judged on its committed state.
     stale = (
         SlotLock.objects.filter(keys, court_id=booking.court_id)
-        .filter(booking__status=Status.PENDING, booking__hold_expires_at__lte=now)
+        .filter(~active_locks_q(now))
         .exclude(booking_id=booking.pk)
-        .values_list("booking_id", flat=True)
     )
-    stale_ids = set(stale)
+    stale_ids = set(stale.values_list("booking_id", flat=True))
     if stale_ids:
-        expired = list(
+        locked_ids = list(
             Booking.objects.select_for_update()
-            .filter(pk__in=stale_ids, status=Status.PENDING, hold_expires_at__lte=now)
+            .filter(pk__in=stale_ids)
             .order_by("pk")
             .values_list("pk", flat=True)
         )
-        if expired:
-            _expire_locked(expired)
-            logger.info("hold.expired count=%d lazy=1", len(expired))
+        owners = dict(
+            stale.filter(booking_id__in=locked_ids).values_list("booking_id", "booking__status")
+        )
+        lapsed = sorted(pk for pk, status in owners.items() if status == Status.PENDING)
+        final = sorted(pk for pk, status in owners.items() if status != Status.PENDING)
+        if lapsed:
+            _expire_locked(lapsed)
+            logger.info("hold.expired count=%d lazy=1", len(lapsed))
+        if final:
+            # Locks left behind by an already-final booking: free them, keep its status.
+            SlotLock.objects.filter(booking_id__in=final).delete()
+            logger.warning("lock.leftover_cleared bookings=%d", len(final))
 
     locks = [
         SlotLock(booking=booking, court_id=booking.court_id, space=space, starts_at=start)
@@ -204,6 +215,8 @@ def create_staff_booking(
         hours=hours,
         now=now,
     )
+    if coverage == Coverage.HALF and half not in (Half.A, Half.B):
+        raise BookingRuleError("coverage_not_allowed")
     spaces = rules.spaces_for(court, coverage, half)
     starts = rules.slot_starts(day, start_hour, hours)
     walk_in = source == Source.WALK_IN
@@ -233,7 +246,8 @@ def create_staff_booking(
 
 def release(booking: Booking, *, status: str, now: datetime | None = None) -> bool:
     """Free a pending or confirmed booking's slots and set its final `status`. Idempotent: returns
-    False, changing nothing, when the booking is already final."""
+    False, changing nothing, when the booking is already final. Only a pending booking can be
+    released as `expired`."""
     if status not in RELEASE_STATUSES:
         raise ValueError("release status must be cancelled, expired or needs_refund")
     now = now or timezone.now()
@@ -241,6 +255,8 @@ def release(booking: Booking, *, status: str, now: datetime | None = None) -> bo
         locked = Booking.objects.select_for_update().get(pk=booking.pk)
         if locked.status not in (Status.PENDING, Status.CONFIRMED):
             return False
+        if status == Status.EXPIRED and locked.status != Status.PENDING:
+            raise ValueError("only a pending booking can be released as expired")
         SlotLock.objects.filter(booking_id=locked.pk).delete()
         locked.status = status
         if status == Status.CANCELLED:
@@ -271,21 +287,29 @@ def expire_stale_holds(*, now: datetime | None = None) -> int:
 
 def reacquire(booking: Booking, *, now: datetime | None = None) -> bool:
     """Re-claim an online booking's same court, spaces and hours after its hold lapsed (a late
-    payment). True on success, False if the slots are taken. Never changes the status: the
-    payment confirmation that calls this does. A lapsed `pending` booking's leftover locks are
-    dropped and re-inserted in the same savepoint."""
-    if booking.source != Source.ONLINE or booking.status not in (Status.EXPIRED, Status.PENDING):
-        raise ValueError("only an expired or pending online booking can be reacquired")
+    payment). Must run inside `transaction.atomic()`. True on success; False if the slots are
+    taken or have already started. Never changes the status: the payment confirmation that calls
+    this does. The booking is re-read under a row lock and judged on that copy, never on the
+    caller's in-memory object. A lapsed `pending` booking's leftover locks are dropped and
+    re-inserted in the same savepoint."""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("reacquire must run inside transaction.atomic()")
     now = now or timezone.now()
-    spaces = rules.spaces_for(booking.court, booking.coverage, booking.half)
-    local_start = booking.starts_at.astimezone(rules.TIME_ZONE)
-    starts = rules.slot_starts(local_start.date(), local_start.hour, booking.hours)
+    locked = Booking.objects.select_for_update().get(pk=booking.pk)
+    if locked.source != Source.ONLINE or locked.status not in (Status.EXPIRED, Status.PENDING):
+        raise ValueError("only an expired or pending online booking can be reacquired")
+    if locked.starts_at <= now:
+        logger.info("hold.reacquire_failed ref=%s", locked.reference)
+        return False
+    spaces = rules.spaces_for(locked.court, locked.coverage, locked.half)
+    local_start = locked.starts_at.astimezone(rules.TIME_ZONE)
+    starts = rules.slot_starts(local_start.date(), local_start.hour, locked.hours)
     try:
         with transaction.atomic():
-            SlotLock.objects.filter(booking_id=booking.pk).delete()
-            claim_slots(booking, spaces, starts, now=now)
+            SlotLock.objects.filter(booking_id=locked.pk).delete()
+            claim_slots(locked, spaces, starts, now=now)
     except SlotTaken:
-        logger.info("hold.reacquire_failed ref=%s", booking.reference)
+        logger.info("hold.reacquire_failed ref=%s", locked.reference)
         return False
-    logger.info("hold.reacquired ref=%s", booking.reference)
+    logger.info("hold.reacquired ref=%s", locked.reference)
     return True
