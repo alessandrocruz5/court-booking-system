@@ -1,0 +1,13 @@
+# Build context for apps/web/Dockerfile (the repo root). apps/backend/package.json stays in:
+# turbo prune reads every workspace manifest.
+**/node_modules
+**/.next
+**/.turbo
+.git
+**/.env*
+!**/.env.example
+coverage
+docs/plans
+apps/backend/.venv
+apps/backend/staticfiles
+**/__pycache__

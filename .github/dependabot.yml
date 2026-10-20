@@ -34,3 +34,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # Base images in the two Dockerfiles (node, python and the uv image).
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /apps/backend
+    schedule:
+      interval: weekly

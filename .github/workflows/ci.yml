@@ -55,6 +55,83 @@ jobs:
       # No env: settings and pages read variables per request, never at build time.
       - run: pnpm build
 
+  # Builds both Cloud Run images with no build env and smoke-runs them. Nothing is pushed.
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: true
+          tags: cb-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Build backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: apps/backend
+          push: false
+          load: true
+          tags: cb-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - name: Smoke web
+        run: |
+          docker run -d --name web -p 8080:8080 -e SITE_URL=http://localhost:8080 cb-web:ci
+          for _ in $(seq 30); do
+            curl -fsS localhost:8080/api/health && break
+            sleep 1
+          done
+          curl -fsS localhost:8080/api/health
+          curl -sI localhost:8080/ | grep -i '^content-security-policy:'
+          uid="$(docker exec web id -u)"
+          test "$uid" != 0
+      - name: Smoke backend
+        run: |
+          # Throwaway values, generated per run and never committed.
+          secret_key="$(python3 -c "import secrets;print(secrets.token_urlsafe(50))")"
+          api_token="$(python3 -c "import secrets;print(secrets.token_urlsafe(30))")"
+          echo "::add-mask::$secret_key"
+          echo "::add-mask::$api_token"
+          # Every required key except DJANGO_SECRET_KEY. The database is never connected.
+          env_args=(
+            -e DATABASE_URL=postgres://ci:ci@127.0.0.1:5432/ci
+            -e ALLOWED_HOSTS=localhost
+            -e CSRF_TRUSTED_ORIGINS=http://localhost:8081
+            -e SITE_URL=http://localhost:8080
+            -e INTERNAL_API_TOKEN="$api_token"
+          )
+          docker run -d --name backend -p 8081:8080 -e DJANGO_SECRET_KEY="$secret_key" "${env_args[@]}" cb-backend:ci
+          for _ in $(seq 30); do
+            curl -fsS localhost:8081/healthz && break
+            sleep 1
+          done
+          curl -fsS localhost:8081/healthz
+          uid="$(docker exec backend id -u)"
+          test "$uid" != 0
+          # Fail-fast env validation: without DJANGO_SECRET_KEY, gunicorn must exit non-zero at
+          # once (124 would mean it kept running until the timeout) and name the missing key.
+          rc=0
+          output="$(timeout 30 docker run --rm "${env_args[@]}" cb-backend:ci 2>&1)" || rc=$?
+          echo "$output"
+          if [ "$rc" -eq 0 ] || [ "$rc" -eq 124 ]; then
+            echo "::error::backend did not refuse to start without DJANGO_SECRET_KEY (exit $rc)"
+            exit 1
+          fi
+          grep -q 'missing or blank: DJANGO_SECRET_KEY' <<<"$output"
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs web || true
+          docker logs backend || true
+
   # Fails when a pushed or PR commit adds a secret. It scans only those commits, not all history.
   # By then the secret is already on GitHub: rotate it anyway (runbook → Secret exposure).
   secrets:
