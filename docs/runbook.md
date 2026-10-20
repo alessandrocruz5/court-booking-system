@@ -282,3 +282,66 @@ Removing the commit from history is not enough on its own: clones, forks and cac
 
 Rotating `cb-django-secret-key` signs everyone out. `cb-internal-api-token` is shared by both services, and the
 workflow redeploys both.
+
+## Database roles and migrations
+
+The backend never runs as the Neon owner. Migration `core.0002_app_role` creates the group role `cb_app` (NOLOGIN,
+DML only: no DDL, and `django_migrations` is read-only to it), and Cloud Run connects as `cb_app_login`, a member of
+it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges and before CBS-6 or CBS-7 deploy.
+
+1. Run the migrations from the laptop only, as the owner, over the **direct** endpoint (the host without `-pooler`).
+   Export `MIGRATE_DATABASE_URL` in the shell for the branch being migrated: for `main`, the string from
+   `## Neon (once)`, step 3; for `dev`, the same owner string with the `dev` branch selected in Neon → Connect (keep
+   it in the shell only). Then, from `apps/backend`:
+
+   ```sh
+   DATABASE_URL="$MIGRATE_DATABASE_URL" uv run python manage.py migrate
+   ```
+
+   Every later migration runs the same way, as the owner. `ALTER DEFAULT PRIVILEGES` grants `cb_app` access only to
+   tables the owner creates, so a table created by any other role is invisible to the app. Migrations are additive
+   (expand/contract), and an applied migration is never edited.
+
+2. Create the runtime login once per branch, in `PSQL_HISTORY=/dev/null psql "$MIGRATE_DATABASE_URL"` (as the owner;
+   the history override keeps the password out of `~/.psql_history`). **Never create it in the Neon Console**, which
+   makes console roles members of `neon_superuser`. Generate the password with `openssl rand -hex 32` (hex needs no
+   escaping in a URL):
+
+   ```sql
+   CREATE ROLE cb_app_login LOGIN PASSWORD '<password>' IN ROLE cb_app;
+   ```
+
+   No migration creates a login role or holds a password.
+
+3. For `main`, put `cb_app_login`'s **pooled** connection string into the `cb-database-url` secret, replacing the
+   placeholder from `## Cloud Run (once)`, step 6: the host with `-pooler`, and `?sslmode=require`. Pipe it in so it
+   never lands on screen (the `read -s` prompt doesn't echo):
+
+   ```sh
+   read -rs DB_URL   # cb_app_login's pooled URL: host <endpoint>-pooler.<region>.aws.neon.tech, db neondb, ?sslmode=require
+   printf '%s' "$DB_URL" | gcloud secrets versions add cb-database-url --data-file -
+   unset DB_URL
+   ```
+
+   Redeploy (Actions → Deploy → Run workflow, on `main`), then disable the old version and destroy it once the new
+   revisions serve, to stay at 6 active versions (a disabled version still counts):
+
+   ```sh
+   gcloud secrets versions list cb-database-url
+   gcloud secrets versions disable <old-version> --secret cb-database-url
+   gcloud secrets versions destroy <old-version> --secret cb-database-url
+   ```
+
+4. Check the runtime role, on each branch. Paste `cb_app_login`'s connection string at the silent prompt. The first
+   query must print `18` (the grants work), and the second must fail with `permission denied for schema public`
+   (no DDL):
+
+   ```sh
+   read -rs DATABASE_URL
+   psql "$DATABASE_URL" -c "SELECT count(*) FROM bookings_court"
+   psql "$DATABASE_URL" -c "CREATE TABLE x(id int)"
+   unset DATABASE_URL
+   ```
+
+The reverse of `0002_app_role` revokes `cb_app`'s grants but keeps the role: roles are cluster-wide, and other
+databases on the cluster may use it.
