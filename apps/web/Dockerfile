@@ -12,10 +12,12 @@ WORKDIR /app
 # A workspace subset holding only @cb/web and the packages it depends on.
 FROM base AS pruner
 COPY . .
-# The turbo range from the root package.json, so the prune matches the workspace's turbo 2.x.
+# The exact turbo version the root importer locks in pnpm-lock.yaml, so every build (CI and deploy)
+# runs the same release; the build fails if it can't be found.
 # Telemetry opt-outs are set per command, never baked into the image.
 RUN export TURBO_TELEMETRY_DISABLED=1 \
-    && TURBO_VERSION="$(node -p "require('./package.json').devDependencies.turbo")" \
+    && TURBO_VERSION="$(awk '/^      turbo:$/ { f = 1; next } f && /^        version:/ { print $2; exit }' pnpm-lock.yaml)" \
+    && test -n "$TURBO_VERSION" \
     && pnpm dlx "turbo@${TURBO_VERSION}" prune @cb/web --docker
 
 FROM base AS builder

@@ -106,7 +106,8 @@ gcloud config set project "$PROJECT_ID"
    ```
 
 3. An Artifact Registry Docker repo `cb` in `asia-southeast1`, with a cleanup policy that keeps the 2 most recent
-   versions of each image and deletes everything else after 1 day, untagged images included. The free allowance is
+   versions of each image and deletes everything else after 1 day, untagged images included. An image tagged `keep-…`
+   is never deleted: `## Roll back` uses that to protect the image a pinned revision runs. The free allowance is
    0.5 GB.
 
    ```sh
@@ -114,6 +115,7 @@ gcloud config set project "$PROJECT_ID"
    cat > /tmp/cb-cleanup.json <<'JSON'
    [
      {"name": "keep-2-most-recent", "action": {"type": "Keep"}, "mostRecentVersions": {"keepCount": 2}},
+     {"name": "keep-pinned", "action": {"type": "Keep"}, "condition": {"tagState": "TAGGED", "tagPrefixes": ["keep-"]}},
      {"name": "delete-older", "action": {"type": "Delete"}, "condition": {"tagState": "ANY", "olderThan": "1d"}}
    ]
    JSON
@@ -139,18 +141,26 @@ gcloud config set project "$PROJECT_ID"
    ```
 
 5. Workload Identity Federation, so GitHub Actions signs in with no JSON key: a pool `github` and an OIDC provider
-   `github` that accepts tokens only from this repo's `main` branch, and that repo may impersonate `cb-deployer`.
+   `github` that accepts tokens only from the Deploy workflow on this repo's `main` branch, started by a CI run or by
+   hand. Any other workflow, even one on `main`, is refused. The repo and its owner are matched by numeric id, not
+   by name, so a repo recreated under the same name after a rename or deletion doesn't match. Only that repo may
+   impersonate `cb-deployer`.
 
    ```sh
    PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+   REPO_ID="$(gh api "repos/$GITHUB_REPO" --jq .id)"
+   OWNER_ID="$(gh api "repos/$GITHUB_REPO" --jq .owner.id)"
    gcloud iam workload-identity-pools create github --location global --display-name "GitHub Actions"
    gcloud iam workload-identity-pools providers create-oidc github \
      --location global --workload-identity-pool github \
      --issuer-uri https://token.actions.githubusercontent.com \
-     --attribute-mapping 'google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref' \
-     --attribute-condition "assertion.repository == '$GITHUB_REPO' && assertion.ref == 'refs/heads/main'"
+     --attribute-mapping 'google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref' \
+     --attribute-condition "assertion.repository_id == '$REPO_ID' && assertion.repository_owner_id == '$OWNER_ID' \
+   && assertion.ref == 'refs/heads/main' \
+   && assertion.workflow_ref == '$GITHUB_REPO/.github/workflows/deploy.yml@refs/heads/main' \
+   && assertion.event_name in ['workflow_run', 'workflow_dispatch']"
    gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role roles/iam.workloadIdentityUser \
-     --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/$GITHUB_REPO"
+     --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository_id/$REPO_ID"
    ```
 
 6. **Six Secret Manager secrets**, exactly the free allowance of 6 active versions, each stored in `asia-southeast1`
@@ -210,7 +220,8 @@ deploys `cb-backend` and `cb-web`, updates the job `cb-nightly`, and smoke-check
 is skipped while the `GCP_PROJECT_ID` variable is unset.
 
 1. To redeploy by hand (after a secret change, say): Actions → Deploy → Run workflow, on `main`. The identity pool
-   accepts only `main`, so a run from another branch fails at sign-in.
+   accepts only `main`, so a run from another branch fails at sign-in. A manual run deploys the head of `main` and
+   stops before signing in unless CI passed on that exact commit; if CI is still running, wait for it.
 2. The workflow never runs migrations. A change that needs one: apply the migration from the laptop first, then
    merge. Migrations are additive (expand/contract), so the running code keeps working against the new schema.
 3. Deploys queue one at a time; a running deploy is never cancelled.
@@ -220,20 +231,25 @@ is skipped while the `GCP_PROJECT_ID` variable is unset.
 Artifact Registry keeps only the 2 most recent images per service, so the previous revision is the one you can
 roll back to.
 
-1. Find the last good revision and send all traffic to it:
+1. Find the last good revision, tag its image `keep-rollback` so the cleanup policy can't delete it while it serves
+   (with min 0 instances, every cold start pulls the image again), and send all traffic to it:
 
    ```sh
    gcloud run revisions list --service cb-backend --region asia-southeast1
+   IMAGE="$(gcloud run revisions describe <revision> --region asia-southeast1 \
+     --format='value(spec.containers[0].image)')"
+   gcloud artifacts docker tags add "$IMAGE" "${IMAGE%:*}:keep-rollback"
    gcloud run services update-traffic cb-backend --region asia-southeast1 --to-revisions <revision>=100
    ```
 
    The same for `cb-web`. Migrations are additive, so the code can roll back alone.
 2. Or revert the PR on `main`: CI passes, and the workflow redeploys the previous code.
 3. While traffic is pinned to a revision, new deploys create revisions that get no traffic. Once the fix is
-   deployed, send traffic back to the latest revision:
+   deployed, send traffic back to the latest revision and drop the protective tag:
 
    ```sh
    gcloud run services update-traffic cb-backend --region asia-southeast1 --to-latest
+   gcloud artifacts docker tags delete "${IMAGE%:*}:keep-rollback"
    ```
 
 ## Secret exposure
