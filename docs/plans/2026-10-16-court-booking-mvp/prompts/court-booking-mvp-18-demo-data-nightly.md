@@ -41,6 +41,9 @@ Make the demo look like a real, busy venue on any day someone opens it.
   - `bookings/holds.py`: `claim_slots(booking, spaces, starts, *, now)`, which must run inside `transaction.atomic()` and
     raises `SlotTaken`, plus `expire_stale_holds(*, now=None) -> int`.
   - `core/ratelimit.py`: `prune(*, older_than, now=None) -> int`.
+  - `apps/web/app/privacy/page.tsx` (added in CBS-7, read only): it already promises anonymization `RETENTION_DAYS`
+    (7) days after a visitor booking ends, so within 8 days, and rate-limit entries deleted within a day. The nightly
+    job must keep both promises; if it can't, stop and say so rather than changing the page.
 - Pattern reference, read only: `/Users/alessandrocruz/Code/fun-run-website/packages/db/src/seed-registrations.ts`
   (fake people, `@example.com`, `+63900000xxxx`, an explicit guard) and the runbook's "Demo data" bullet
   (`/Users/alessandrocruz/Code/fun-run-website/docs/runbook.md`, around lines 375–390).
