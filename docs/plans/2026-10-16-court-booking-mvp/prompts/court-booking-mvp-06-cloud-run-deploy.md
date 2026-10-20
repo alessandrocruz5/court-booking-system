@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-10-16-court-booking-mvp]]"
 id: 06
 unit: CBS-3
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [05]
