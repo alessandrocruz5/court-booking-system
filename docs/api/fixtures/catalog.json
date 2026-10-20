@@ -1,0 +1,88 @@
+{
+  "venue": {
+    "name": "Kalaro Courts",
+    "time_zone": "Asia/Manila"
+  },
+  "hours": {
+    "open": 7,
+    "close": 23
+  },
+  "window_days": 7,
+  "max_hours": 3,
+  "hold_minutes": 20,
+  "peak": {
+    "weekdays_from_hour": 17,
+    "weekends_all_day": true
+  },
+  "sports": [
+    {
+      "id": "basketball",
+      "label": "Basketball",
+      "court_kind": "basketball",
+      "court_count": 2,
+      "coverages": ["full", "half"],
+      "rates": {
+        "full": {
+          "off_peak": 120000,
+          "peak": 160000
+        },
+        "half": {
+          "off_peak": 70000,
+          "peak": 90000
+        }
+      }
+    },
+    {
+      "id": "volleyball",
+      "label": "Volleyball",
+      "court_kind": "basketball",
+      "court_count": 2,
+      "coverages": ["full"],
+      "rates": {
+        "full": {
+          "off_peak": 120000,
+          "peak": 160000
+        }
+      }
+    },
+    {
+      "id": "tennis",
+      "label": "Tennis",
+      "court_kind": "tennis",
+      "court_count": 4,
+      "coverages": ["full"],
+      "rates": {
+        "full": {
+          "off_peak": 50000,
+          "peak": 70000
+        }
+      }
+    },
+    {
+      "id": "badminton",
+      "label": "Badminton",
+      "court_kind": "multi",
+      "court_count": 12,
+      "coverages": ["full"],
+      "rates": {
+        "full": {
+          "off_peak": 35000,
+          "peak": 45000
+        }
+      }
+    },
+    {
+      "id": "pickleball",
+      "label": "Pickleball",
+      "court_kind": "multi",
+      "court_count": 12,
+      "coverages": ["full"],
+      "rates": {
+        "full": {
+          "off_peak": 40000,
+          "peak": 50000
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "status": "confirmed",
+  "booking": {
+    "reference": "KC-7Q4M2X",
+    "status": "confirmed",
+    "court": {
+      "code": "tn-2",
+      "name": "Tennis Court 2"
+    },
+    "sport": "tennis",
+    "coverage": "full",
+    "half": null,
+    "date": "2026-10-31",
+    "start_hour": 18,
+    "hours": 2,
+    "price_centavos": 140000,
+    "hold_expires_at": null,
+    "paid_at": "2026-10-30T14:07:12+08:00",
+    "payment_method": "gcash"
+  }
+}

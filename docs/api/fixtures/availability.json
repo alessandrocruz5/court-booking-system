@@ -1,0 +1,80 @@
+{
+  "date": "2026-11-03",
+  "sport": "basketball",
+  "coverage": "half",
+  "hours": 2,
+  "courts": [
+    {
+      "code": "bb-1",
+      "name": "Basketball Court 1",
+      "starts": [
+        {
+          "hour": 9,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 10,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 15,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 16,
+          "price_centavos": 160000,
+          "peak": false
+        },
+        {
+          "hour": 17,
+          "price_centavos": 180000,
+          "peak": true
+        },
+        {
+          "hour": 20,
+          "price_centavos": 180000,
+          "peak": true
+        },
+        {
+          "hour": 21,
+          "price_centavos": 180000,
+          "peak": true
+        }
+      ]
+    },
+    {
+      "code": "bb-2",
+      "name": "Basketball Court 2",
+      "starts": [
+        {
+          "hour": 7,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 8,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 9,
+          "price_centavos": 140000,
+          "peak": false
+        },
+        {
+          "hour": 18,
+          "price_centavos": 180000,
+          "peak": true
+        },
+        {
+          "hour": 19,
+          "price_centavos": 180000,
+          "peak": true
+        }
+      ]
+    }
+  ]
+}
