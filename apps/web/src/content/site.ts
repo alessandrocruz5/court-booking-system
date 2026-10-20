@@ -1,5 +1,6 @@
 import { baseEnvSchema, createEnv } from "@cb/env";
 import { z } from "zod";
+import { formatHour } from "@/lib/booking/params";
 
 /** Kalaro Courts is fictional. */
 export const SITE = {
@@ -31,6 +32,10 @@ export const WINDOW_DAYS = 7;
 export const MAX_HOURS = 3;
 /** Visitor bookings are anonymized this many days after they end (see `/privacy`). */
 export const RETENTION_DAYS = 7;
+/** How long a slot is held while the visitor pays, in minutes. Tested against the fixture. */
+export const HOLD_MINUTES = 20;
+/** Weekday peak pricing starts at this local hour. Tested against the fixture. */
+export const PEAK_FROM_HOUR = 17;
 
 const dashboardEnvSchema = baseEnvSchema.extend({
   /** The Django staff dashboard's URL. Only `/staff` reads it. */
@@ -50,8 +55,7 @@ export function getDashboardUrl(source?: Record<string, string | undefined>): st
 export const FAQ: readonly { question: string; answer: string }[] = [
   {
     question: "How long is my slot held?",
-    answer:
-      "Your slot is held for 20 minutes while you pay. If the hold runs out, the slot is released.",
+    answer: `Your slot is held for ${HOLD_MINUTES} minutes while you pay. If the hold runs out, the slot is released.`,
   },
   {
     question: "How do I pay?",
@@ -64,7 +68,7 @@ export const FAQ: readonly { question: string; answer: string }[] = [
   },
   {
     question: "What counts as peak time?",
-    answer: "Weekdays from 5 PM, and all day on weekends. Everything else is off-peak.",
+    answer: `Weekdays from ${formatHour(PEAK_FROM_HOUR)}, and all day on weekends. Everything else is off-peak.`,
   },
   {
     question: "Can I book half a basketball court?",

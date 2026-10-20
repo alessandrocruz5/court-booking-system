@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { ApiError, clientIpFrom, createBooking } from "@/lib/api/client";
+import { ApiError, clientIpFrom, createBooking, releaseCheckout } from "@/lib/api/client";
 import { coverageSchema, sportSchema } from "@/lib/api/schemas";
 
 /**
@@ -52,6 +52,13 @@ const FIELD_MESSAGES: Record<CheckoutField, string> = {
   consent: "Please agree to the privacy notice to continue.",
 };
 
+/** The backend's `invalid_request` names for the visible customer fields. */
+const API_FIELDS = new Map<string, CheckoutField>([
+  ["customer.name", "name"],
+  ["customer.email", "email"],
+  ["customer.mobile", "mobile"],
+]);
+
 const SELECTION_MESSAGE = "That time is no longer available. Pick another slot.";
 const SLOT_TAKEN = "Someone just booked that time. Pick another slot.";
 const TOO_MANY = "Too many bookings in progress. Finish or cancel one, then try again.";
@@ -71,6 +78,21 @@ function messageFor(code: string): string {
     default:
       return GENERIC;
   }
+}
+
+/**
+ * The backend's `invalid_request` field names as the form's errors: a customer field gets its own
+ * fixed message; anything else (`court`, `start_hour`, `body`, ...) is the selection's.
+ */
+function apiFieldErrors(fields: string[]): Pick<CheckoutState, "fieldErrors" | "message"> {
+  const fieldErrors: Partial<Record<CheckoutField, string>> = {};
+  let selectionFailed = false;
+  for (const name of fields) {
+    const field = API_FIELDS.get(name);
+    if (field) fieldErrors[field] = FIELD_MESSAGES[field];
+    else selectionFailed = true;
+  }
+  return { fieldErrors, message: selectionFailed ? SELECTION_MESSAGE : undefined };
 }
 
 /** Only a top-level redirect to PayMongo's hosted checkout, over https, on its exact host. */
@@ -150,6 +172,9 @@ export async function startCheckout(
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
     console.error(`checkout.create_failed ${error.code}`);
+    if (error.code === "invalid_request" && error.fields?.length) {
+      return { ...apiFieldErrors(error.fields), values };
+    }
     return { message: messageFor(error.code), values };
   }
 
@@ -169,4 +194,25 @@ export async function startCheckout(
 
   // Outside any try/catch: redirect() throws to end the action.
   redirect(created.checkout_url);
+}
+
+/**
+ * The cancel page's "Release my hold" button, shown instead of releasing when that page was loaded
+ * by a prefetch or prerender. The cookie is the only input. It releases the hold, then reloads the
+ * cancel page, whose own release is idempotent (`released` again, or `already_paid`) and shows the
+ * result; a failure there shows its fixed copy. Logs only the error code.
+ */
+export async function releaseHold(): Promise<void> {
+  const checkoutSessionId = (await cookies()).get(CHECKOUT_COOKIE)?.value;
+  if (checkoutSessionId) {
+    try {
+      await releaseCheckout(checkoutSessionId);
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      console.error(`checkout.release_failed ${error.code}`);
+    }
+  }
+
+  // Outside any try/catch: redirect() throws to end the action.
+  redirect("/book/cancelled");
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { FAQ, HOURS, MAX_HOURS, SITE, WINDOW_DAYS } from "@/content/site";
+import { FAQ, HOLD_MINUTES, HOURS, MAX_HOURS, SITE, WINDOW_DAYS } from "@/content/site";
 import { getCatalog } from "@/lib/api/client";
 import { formatHour, formatPeso } from "@/lib/booking/params";
 
@@ -43,7 +43,7 @@ export default function HomePage() {
         <ol className="m-0 mt-4 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Pick", "Choose a sport, a day and a time."],
-            ["Hold", "We hold your slot for 20 minutes."],
+            ["Hold", `We hold your slot for ${HOLD_MINUTES} minutes.`],
             ["Pay", "Pay on PayMongo's test checkout."],
             ["Show your reference", "Bring the KC- reference you get after paying."],
           ].map(([title, text], i) => (

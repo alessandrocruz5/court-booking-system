@@ -1,3 +1,5 @@
+import "server-only";
+
 import { baseEnvSchema, createEnv } from "@cb/env";
 import { z } from "zod";
 

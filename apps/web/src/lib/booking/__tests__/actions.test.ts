@@ -1,20 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createBooking } from "@/lib/api/client";
+import { ApiError, createBooking, releaseCheckout } from "@/lib/api/client";
 import type * as Client from "@/lib/api/client";
 import type { BookingCreated } from "@/lib/api/schemas";
-import { type CheckoutState, startCheckout } from "../actions";
+import { type CheckoutState, releaseHold, startCheckout } from "../actions";
 
 vi.mock("@/lib/api/client", async (importActual) => {
   // The real ApiError and clientIpFrom; only the network call is faked.
   const actual = await importActual<typeof Client>();
-  return { ...actual, createBooking: vi.fn() };
+  return { ...actual, createBooking: vi.fn(), releaseCheckout: vi.fn() };
 });
 
 const cookieSet = vi.fn();
+let cookieValue: string | undefined;
 let requestHeaders = new Headers();
 
 vi.mock("next/headers", () => ({
-  cookies: vi.fn(async () => ({ set: cookieSet })),
+  cookies: vi.fn(async () => ({
+    set: cookieSet,
+    get: (name: string) =>
+      name === "cb_checkout" && cookieValue !== undefined ? { value: cookieValue } : undefined,
+  })),
   headers: vi.fn(async () => requestHeaders),
 }));
 
@@ -27,6 +32,7 @@ vi.mock("next/navigation", () => ({
 
 const { redirect } = await import("next/navigation");
 const createBookingMock = vi.mocked(createBooking);
+const releaseCheckoutMock = vi.mocked(releaseCheckout);
 const redirectMock = vi.mocked(redirect);
 
 const NAME = "Ana Reyes";
@@ -75,7 +81,9 @@ beforeEach(() => {
 
 afterEach(() => {
   createBookingMock.mockReset();
+  releaseCheckoutMock.mockReset();
   cookieSet.mockReset();
+  cookieValue = undefined;
   redirectMock.mockClear();
   consoleSpies.length = 0;
   vi.restoreAllMocks();
@@ -196,6 +204,73 @@ describe("startCheckout API errors", () => {
   it("rethrows anything that isn't an ApiError", async () => {
     createBookingMock.mockRejectedValue(new TypeError("boom"));
     await expect(startCheckout(INITIAL, form())).rejects.toThrow("boom");
+  });
+
+  it("maps invalid_request customer fields to their field errors and keeps the values", async () => {
+    createBookingMock.mockRejectedValue(
+      new ApiError(400, "invalid_request", ["customer.name", "customer.email", "customer.mobile"]),
+    );
+    const state = await startCheckout(INITIAL, form());
+    expect(state).toEqual({
+      fieldErrors: {
+        name: "Enter your name (2 to 80 characters).",
+        email: "Enter a valid email address.",
+        mobile: "Enter a Philippine mobile number, like 0917 123 4567.",
+      },
+      message: undefined,
+      values: { name: NAME, email: EMAIL, mobile: MOBILE },
+    });
+  });
+
+  it.each([["court"], ["start_hour"], ["body"]])(
+    "maps an invalid_request %s to the selection message",
+    async (field) => {
+      createBookingMock.mockRejectedValue(new ApiError(400, "invalid_request", [field]));
+      const state = await startCheckout(INITIAL, form());
+      expect(state.fieldErrors).toEqual({});
+      expect(state.message).toBe("That time is no longer available. Pick another slot.");
+    },
+  );
+
+  it("maps mixed invalid_request fields to both", async () => {
+    createBookingMock.mockRejectedValue(
+      new ApiError(400, "invalid_request", ["date", "customer.email", "constructor"]),
+    );
+    const state = await startCheckout(INITIAL, form());
+    expect(state.fieldErrors).toEqual({ email: "Enter a valid email address." });
+    expect(state.message).toBe("That time is no longer available. Pick another slot.");
+  });
+});
+
+describe("releaseHold", () => {
+  it("releases the hold named by the cookie, then reloads the cancel page", async () => {
+    cookieValue = "cs_test_abc";
+    releaseCheckoutMock.mockResolvedValue({ status: "released" });
+
+    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
+    expect(redirectMock).toHaveBeenCalledWith("/book/cancelled");
+  });
+
+  it("without a cookie, never calls the backend", async () => {
+    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    expect(releaseCheckoutMock).not.toHaveBeenCalled();
+  });
+
+  it("logs only the code of an ApiError, then still reloads the cancel page", async () => {
+    cookieValue = "cs_test_abc";
+    releaseCheckoutMock.mockRejectedValue(new ApiError(0, "unavailable"));
+
+    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    const logged = consoleSpies.flatMap((spy) => spy.mock.calls.flat().map(String)).join("\n");
+    expect(logged).toBe("checkout.release_failed unavailable");
+  });
+
+  it("rethrows anything that isn't an ApiError", async () => {
+    cookieValue = "cs_test_abc";
+    releaseCheckoutMock.mockRejectedValue(new TypeError("boom"));
+    await expect(releaseHold()).rejects.toThrow("boom");
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });
 

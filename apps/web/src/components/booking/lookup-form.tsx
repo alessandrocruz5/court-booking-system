@@ -103,7 +103,12 @@ function formatDate(date: string): string {
 }
 
 function Summary({ booking }: { booking: BookingSummary }) {
-  const status = STATUS[booking.status];
+  // A lapsed hold the nightly sweep hasn't reached yet is still stored as pending.
+  const lapsed =
+    booking.status === "pending" &&
+    booking.hold_expires_at !== null &&
+    new Date(booking.hold_expires_at).getTime() < Date.now();
+  const status = STATUS[lapsed ? "expired" : booking.status];
   const sport = booking.sport ? (SPORT_LABEL[booking.sport] ?? booking.sport) : null;
   const coverage =
     booking.coverage === "half"

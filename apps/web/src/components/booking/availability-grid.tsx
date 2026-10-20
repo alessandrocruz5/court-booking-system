@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ApiError, getAvailability } from "@/lib/api/client";
+import { ApiError, getAvailabilityOnce } from "@/lib/api/client";
 import { type BookingParams, bookingHref, formatHour, formatPeso } from "@/lib/booking/params";
 
 const FOCUS = "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court";
@@ -50,12 +50,8 @@ export async function AvailabilityGrid({
 
   let availability;
   try {
-    availability = await getAvailability({
-      date,
-      sport,
-      coverage: params.coverage,
-      hours: params.hours,
-    });
+    // Deduped per request with the details step's identical call; still fetched fresh each request.
+    availability = await getAvailabilityOnce(date, sport, params.coverage, params.hours);
   } catch (error) {
     if (error instanceof ApiError) {
       return <LoadError href={bookingHref(params, { date })} />;

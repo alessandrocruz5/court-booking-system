@@ -34,9 +34,12 @@ export type DetailsSummary = {
 export function DetailsForm({
   selection,
   summary,
+  holdMinutes,
 }: {
   selection: DetailsSelection;
   summary: DetailsSummary;
+  /** `HOLD_MINUTES`, passed from the server page so `site.ts` stays out of the client bundle. */
+  holdMinutes: number;
 }) {
   const [state, formAction, pending] = useActionState(startCheckout, INITIAL);
   const errors = state.fieldErrors ?? {};
@@ -155,7 +158,8 @@ export function DetailsForm({
           {pending ? "Holding your slot…" : "Continue to payment"}
         </button>
         <p className="mt-2 mb-0 text-sm text-ink/70">
-          You&apos;ll pay on PayMongo&apos;s test checkout. Your slot is held for 20 minutes.
+          You&apos;ll pay on PayMongo&apos;s test checkout. Your slot is held for {holdMinutes}{" "}
+          minutes.
         </p>
       </div>
     </form>

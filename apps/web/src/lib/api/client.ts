@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import type { z } from "zod";
 import { getApiEnv } from "./env";
 import {
@@ -65,6 +66,8 @@ async function request<T>(path: string, schema: z.ZodType<T>, init: ApiRequest):
       headers,
       body: init.method === "POST" ? JSON.stringify(init.body) : undefined,
       cache: "no-store",
+      // A backend redirect must not silently turn a POST into a GET; it rejects as unavailable.
+      redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     text = await response.text();
@@ -88,8 +91,8 @@ async function request<T>(path: string, schema: z.ZodType<T>, init: ApiRequest):
 
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    // The path only: never the body, which may describe a booking.
-    console.error(`api.bad_response ${path}`);
+    // The path only, without its query string: never the body, which may describe a booking.
+    console.error(`api.bad_response ${path.split("?")[0]}`);
     throw new ApiError(502, "bad_response");
   }
   return parsed.data;
@@ -113,6 +116,17 @@ export function getAvailability({
   const query = new URLSearchParams({ date, sport, coverage, hours: String(hours) });
   return request(`/api/v1/availability?${query}`, availabilitySchema, { method: "GET" });
 }
+
+/**
+ * `getAvailability`, deduped within one server request: `/book`'s grid and details step ask for
+ * the same availability. React's `cache` memoizes per request (primitive arguments, so equal
+ * calls hit), including a rejection; it is not response caching, so every request still fetches
+ * fresh with `no-store`.
+ */
+export const getAvailabilityOnce = cache(
+  (date: string, sport: Sport, coverage: Coverage, hours: number): Promise<Availability> =>
+    getAvailability({ date, sport, coverage, hours }),
+);
 
 export type CreateBookingInput = {
   court: string;

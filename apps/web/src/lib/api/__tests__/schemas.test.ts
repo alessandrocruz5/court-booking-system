@@ -51,16 +51,23 @@ describe("API schemas against docs/api/fixtures", () => {
     const result = schema!.safeParse(fixture(name));
     expect(result.error?.issues ?? []).toEqual([]);
   });
+
+  // The drift guard: the runtime schemas strip unknown keys, so a fixture field a schema lacks
+  // would be dropped here and the round trip would fail.
+  it.each(files)("%s parses back to itself, with no field stripped", (name) => {
+    expect(SCHEMAS[name]!.parse(fixture(name))).toEqual(fixture(name));
+  });
 });
 
 describe("API schemas", () => {
   const summary = fixture("booking-lookup.json").booking as Record<string, unknown>;
 
-  it("rejects a field the contract doesn't have", () => {
-    expect(catalogSchema.safeParse({ ...fixture("catalog.json"), extra: 1 }).success).toBe(false);
-    expect(bookingSummarySchema.safeParse({ ...summary, email: "ana@example.com" }).success).toBe(
-      false,
-    );
+  it("strips a field the contract doesn't have", () => {
+    const catalog = catalogSchema.parse({ ...fixture("catalog.json"), extra: 1 });
+    expect(catalog).not.toHaveProperty("extra");
+    const booking = bookingSummarySchema.parse({ ...summary, email: "ana@example.com" });
+    expect(booking).not.toHaveProperty("email");
+    expect(booking).toEqual(summary);
   });
 
   it("takes nullability from the README, not the fixtures", () => {

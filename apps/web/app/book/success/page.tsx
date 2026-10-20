@@ -61,9 +61,14 @@ export default async function SuccessPage() {
       return (
         <Result eyebrow="No booking here" title="Nothing to show yet.">
           <p className="mt-4 max-w-xl">We couldn&apos;t find a booking in this browser.</p>
+          {/* GCash and Maya on mobile often return to a different browser than the one that paid. */}
+          <p className="mt-2 max-w-xl">
+            Paid in another app or browser? Your KC- reference was on the PayMongo checkout page.
+            Use it with your email in Find your booking.
+          </p>
           <div className="row">
             <Link href="/booking" className="btn btn-accent">
-              Find a booking
+              Find your booking
             </Link>
           </div>
         </Result>

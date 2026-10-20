@@ -9,8 +9,9 @@ import {
 import { DateStrip } from "@/components/booking/date-strip";
 import { DurationPicker } from "@/components/booking/duration-picker";
 import { DetailsForm } from "@/components/booking/details-form";
+import { HOLD_MINUTES } from "@/content/site";
 import { SportPicker } from "@/components/booking/sport-picker";
-import { ApiError, getAvailability, getCatalog } from "@/lib/api/client";
+import { ApiError, getAvailabilityOnce, getCatalog } from "@/lib/api/client";
 import type { Catalog } from "@/lib/api/schemas";
 import {
   type BookingParams,
@@ -146,12 +147,8 @@ async function DetailsStep({
 
   let availability;
   try {
-    availability = await getAvailability({
-      date,
-      sport: sport.id,
-      coverage: params.coverage,
-      hours: params.hours,
-    });
+    // Shares the grid's call within this request (same arguments).
+    availability = await getAvailabilityOnce(date, sport.id, params.coverage, params.hours);
   } catch (error) {
     if (error instanceof ApiError) return <LoadError href={bookingHref(params, { date })} />;
     throw error;
@@ -175,6 +172,7 @@ async function DetailsStep({
 
   return (
     <DetailsForm
+      holdMinutes={HOLD_MINUTES}
       selection={{
         court,
         sport: sport.id,

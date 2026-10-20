@@ -5,7 +5,9 @@ import { z } from "zod";
  * `docs/api/README.md` (nullability comes from the README). A contract change updates the
  * fixtures, both test suites, this file and the README together.
  *
- * Objects are strict, so a renamed or added field fails `schemas.test.ts` instead of drifting.
+ * Objects strip unknown keys rather than reject them: the backend deploys first, so an additive
+ * field must not turn every call into `bad_response`. Drift is caught in `schemas.test.ts` instead,
+ * where every fixture must parse back to itself (a field this file lacks would be stripped).
  */
 
 export const sportSchema = z.enum([
@@ -41,17 +43,17 @@ const localDate = z.iso.date();
 /** ISO-8601 with the venue offset, e.g. `2026-10-30T14:20:00+08:00`. */
 const timestamp = z.iso.datetime({ offset: true });
 
-const rateSchema = z.strictObject({ off_peak: centavos, peak: centavos });
+const rateSchema = z.object({ off_peak: centavos, peak: centavos });
 
-export const catalogSchema = z.strictObject({
-  venue: z.strictObject({ name: z.string(), time_zone: z.string() }),
-  hours: z.strictObject({ open: hour, close: hour }),
+export const catalogSchema = z.object({
+  venue: z.object({ name: z.string(), time_zone: z.string() }),
+  hours: z.object({ open: hour, close: hour }),
   window_days: z.int().positive(),
   max_hours: z.int().positive(),
   hold_minutes: z.int().positive(),
-  peak: z.strictObject({ weekdays_from_hour: hour, weekends_all_day: z.boolean() }),
+  peak: z.object({ weekdays_from_hour: hour, weekends_all_day: z.boolean() }),
   sports: z.array(
-    z.strictObject({
+    z.object({
       id: sportSchema,
       label: z.string(),
       court_kind: courtKindSchema,
@@ -63,22 +65,22 @@ export const catalogSchema = z.strictObject({
 });
 export type Catalog = z.infer<typeof catalogSchema>;
 
-export const availabilitySchema = z.strictObject({
+export const availabilitySchema = z.object({
   date: localDate,
   sport: sportSchema,
   coverage: coverageSchema,
   hours: z.int().positive(),
   courts: z.array(
-    z.strictObject({
+    z.object({
       code: z.string(),
       name: z.string(),
-      starts: z.array(z.strictObject({ hour, price_centavos: centavos, peak: z.boolean() })),
+      starts: z.array(z.object({ hour, price_centavos: centavos, peak: z.boolean() })),
     }),
   ),
 });
 export type Availability = z.infer<typeof availabilitySchema>;
 
-export const bookingCreatedSchema = z.strictObject({
+export const bookingCreatedSchema = z.object({
   reference: z.string(),
   checkout_url: z.url(),
   checkout_session_id: z.string(),
@@ -88,10 +90,10 @@ export const bookingCreatedSchema = z.strictObject({
 export type BookingCreated = z.infer<typeof bookingCreatedSchema>;
 
 /** `booking_summary`: no name, email or mobile. */
-export const bookingSummarySchema = z.strictObject({
+export const bookingSummarySchema = z.object({
   reference: z.string(),
   status: bookingStatusSchema,
-  court: z.strictObject({ code: z.string(), name: z.string() }),
+  court: z.object({ code: z.string(), name: z.string() }),
   sport: sportSchema.nullable(),
   coverage: coverageSchema,
   half: z.enum(["A", "B"]).nullable(),
@@ -116,25 +118,25 @@ export const checkoutStatusValueSchema = z.enum([
 ]);
 export type CheckoutStatusValue = z.infer<typeof checkoutStatusValueSchema>;
 
-export const checkoutStatusSchema = z.strictObject({
+export const checkoutStatusSchema = z.object({
   status: checkoutStatusValueSchema,
   booking: bookingSummarySchema.nullable(),
 });
 export type CheckoutStatus = z.infer<typeof checkoutStatusSchema>;
 
-export const checkoutReleaseSchema = z.strictObject({
+export const checkoutReleaseSchema = z.object({
   status: z.enum(["released", "already_paid", "not_found"]),
 });
 export type CheckoutRelease = z.infer<typeof checkoutReleaseSchema>;
 
-export const bookingLookupSchema = z.strictObject({ booking: bookingSummarySchema });
+export const bookingLookupSchema = z.object({ booking: bookingSummarySchema });
 export type BookingLookup = z.infer<typeof bookingLookupSchema>;
 
 /**
  * `{"error": code, "fields"?: [...]}`. `fields` names nested customer fields as `customer.name`,
  * `customer.email` and `customer.mobile`, and a non-object body as `body`.
  */
-export const apiErrorBodySchema = z.strictObject({
+export const apiErrorBodySchema = z.object({
   error: z.string().min(1),
   fields: z.array(z.string()).optional(),
 });

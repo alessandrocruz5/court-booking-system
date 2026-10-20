@@ -48,8 +48,14 @@ export default function PrivacyPage() {
 
         <Section title="Who we share it with">
           <p>
-            PayMongo processes the payment, in test mode. The only thing we send it to identify a
-            booking is the booking ID, not your name, email or mobile number.
+            PayMongo processes the payment, in test mode. We send PayMongo the booking ID, the
+            booking reference, the court, time and amount, never your name, email or mobile.
+            Whatever you enter on PayMongo&apos;s checkout (card or wallet details, billing name or
+            email) is handled by PayMongo under its own privacy policy.
+          </p>
+          <p>
+            Your booking is stored with our hosting providers, Neon (database) and Google Cloud
+            (Cloud Run), in Singapore.
           </p>
         </Section>
 

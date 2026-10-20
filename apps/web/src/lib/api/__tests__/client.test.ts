@@ -6,6 +6,7 @@ import {
   confirmCheckout,
   createBooking,
   getAvailability,
+  getAvailabilityOnce,
   getCatalog,
   lookupBooking,
 } from "../client";
@@ -18,6 +19,7 @@ function fixture(name: string): Record<string, unknown> {
 }
 
 const catalog = fixture("catalog.json");
+const availability = fixture("availability.json");
 const bookingCreated = fixture("booking-created.json");
 
 // Not a real secret, and nothing gitleaks would mistake for one.
@@ -65,7 +67,7 @@ const bookingInput = {
 } as const;
 
 describe("request", () => {
-  it("sends the bearer token, no-store and a timeout", async () => {
+  it("sends the bearer token, no-store, redirect: error and a timeout", async () => {
     fetchMock.mockResolvedValue(json(catalog));
     await expect(getCatalog()).resolves.toEqual(catalog);
 
@@ -73,6 +75,7 @@ describe("request", () => {
     expect(url).toBe(`${API_URL}/api/v1/catalog`);
     expect(init.method).toBe("GET");
     expect(init.cache).toBe("no-store");
+    expect(init.redirect).toBe("error");
     expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(init.body).toBeUndefined();
     const headers = new Headers(init.headers);
@@ -88,6 +91,7 @@ describe("request", () => {
     expect(url).toBe(`${API_URL}/api/v1/bookings`);
     expect(init.method).toBe("POST");
     expect(init.cache).toBe("no-store");
+    expect(init.redirect).toBe("error");
     const headers = new Headers(init.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
     expect(headers.get("content-type")).toBe("application/json");
@@ -129,6 +133,16 @@ describe("request", () => {
     );
   });
 
+  it("getAvailabilityOnce delegates to getAvailability", async () => {
+    fetchMock.mockResolvedValue(json(availability));
+    await expect(getAvailabilityOnce("2026-11-03", "basketball", "half", 2)).resolves.toEqual(
+      availability,
+    );
+    expect(lastCall().url).toBe(
+      `${API_URL}/api/v1/availability?date=2026-11-03&sport=basketball&coverage=half&hours=2`,
+    );
+  });
+
   it("turns a 409 slot_taken into ApiError(409, slot_taken), without the request body", async () => {
     fetchMock.mockResolvedValue(json({ error: "slot_taken" }, 409));
     const error = await createBooking(bookingInput).catch((e: unknown) => e);
@@ -150,9 +164,29 @@ describe("request", () => {
     expect(console.error).toHaveBeenCalledWith("api.bad_response /api/v1/catalog");
   });
 
+  it("logs a bad_response path without its query string", async () => {
+    fetchMock.mockResolvedValue(json({ ...availability, hours: "two" }));
+    await expect(
+      getAvailability({ date: "2026-11-03", sport: "basketball", coverage: "half", hours: 2 }),
+    ).rejects.toMatchObject({ status: 502, code: "bad_response" });
+    expect(console.error).toHaveBeenCalledWith("api.bad_response /api/v1/availability");
+    const logged = vi.mocked(console.error).mock.calls.flat().map(String).join("\n");
+    expect(logged).not.toContain("?");
+    expect(logged).not.toContain("2026-11-03");
+  });
+
   it("turns a rejected fetch into unavailable", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     await expect(getCatalog()).rejects.toMatchObject({ status: 0, code: "unavailable" });
+  });
+
+  it("turns a redirect (rejected under redirect: error) into unavailable", async () => {
+    fetchMock.mockRejectedValue(new TypeError("unexpected redirect"));
+    await expect(confirmCheckout("cs_abc")).rejects.toMatchObject({
+      status: 0,
+      code: "unavailable",
+    });
+    expect(lastCall().init.redirect).toBe("error");
   });
 
   it("throws without calling fetch when INTERNAL_API_TOKEN is unset", async () => {
