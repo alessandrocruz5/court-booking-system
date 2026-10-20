@@ -345,3 +345,78 @@ it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges
 
 The reverse of `0002_app_role` revokes `cb_app`'s grants but keeps the role: roles are cluster-wide, and other
 databases on the cluster may use it.
+
+## PayMongo (test mode)
+
+Bookings are paid through PayMongo's hosted checkout, in **test mode only**: the backend accepts only a test secret
+key (`sk_test_…`) and refuses a live-mode webhook, so no real payment can be taken. A booking becomes paid only
+through the signed webhook (`POST /webhooks/paymongo`) or the success page's server-side lookup of the checkout
+session. Do this once, from a laptop with `gcloud` signed in, when CBS-5 merges. It replaces the two placeholders from
+`## Cloud Run (once)`, step 6. Until the real signing secret replaces the public `pending` placeholder, the webhook
+answers 500 to every delivery: the backend refuses a webhook secret shorter than 24 characters.
+
+1. In the PayMongo dashboard, switch to **test mode** and copy the test secret key (`sk_test_…`). Never a live key;
+   the code refuses one anyway. Paste it at the silent prompt and store it in `cb-paymongo-secret-key`. Keep the
+   shell open for step 2:
+
+   ```sh
+   read -rs PAYMONGO_SECRET_KEY   # sk_test_…, test mode
+   printf '%s' "$PAYMONGO_SECRET_KEY" | gcloud secrets versions add cb-paymongo-secret-key --data-file -
+   ```
+
+2. Register the webhook once per environment, through the API with basic auth on the test secret key. The response
+   holds the webhook's signing secret (`data.attributes.secret_key`): it goes straight into
+   `cb-paymongo-webhook-secret` and is never printed, so don't paste the response anywhere else.
+
+   ```sh
+   BACKEND_URL="$(gcloud run services describe cb-backend --region asia-southeast1 --format='value(status.url)')"
+   BODY='{"data":{"attributes":{"url":"'"$BACKEND_URL"'/webhooks/paymongo","events":["checkout_session.payment.paid"]}}}'
+   # The key goes to curl as a config file on stdin (`-K -`), never as an argument other users could see in `ps`.
+   RESPONSE="$(curl -s -K - -H 'content-type: application/json' -d "$BODY" https://api.paymongo.com/v1/webhooks \
+     <<<"user = \"$PAYMONGO_SECRET_KEY:\"")"
+   WEBHOOK_SECRET="$(printf '%s' "$RESPONSE" \
+     | python3 -c "import json, sys; print(json.load(sys.stdin)['data']['attributes']['secret_key'], end='')")"
+   [ -n "$WEBHOOK_SECRET" ] && printf '%s' "$WEBHOOK_SECRET" \
+     | gcloud secrets versions add cb-paymongo-webhook-secret --data-file -
+   unset RESPONSE WEBHOOK_SECRET PAYMONGO_SECRET_KEY BODY
+   ```
+
+   A `KeyError` means PayMongo refused the request and nothing was stored. An error response carries no secret, so
+   run the `curl` command alone (here-string included, without `RESPONSE="$(…)"`) to read it, fix the cause, and run
+   the step again. Each registered webhook has its own secret, so register the URL only once per environment.
+
+3. Redeploy (Actions → Deploy → Run workflow, on `main`), then disable the old (placeholder) version of each secret
+   and destroy it once the new revisions serve, to stay at 6 active versions (a disabled version still counts):
+
+   ```sh
+   for s in cb-paymongo-secret-key cb-paymongo-webhook-secret; do gcloud secrets versions list "$s"; done
+   gcloud secrets versions disable <old-version> --secret cb-paymongo-secret-key
+   gcloud secrets versions destroy <old-version> --secret cb-paymongo-secret-key
+   gcloud secrets versions disable <old-version> --secret cb-paymongo-webhook-secret
+   gcloud secrets versions destroy <old-version> --secret cb-paymongo-webhook-secret
+   ```
+
+4. Check it: a request with no signature must get `401 {"error":"invalid_signature"}` (it never touches the
+   database), and a test-mode payment must show the booking as confirmed on the dashboard.
+
+   ```sh
+   curl -s -X POST "$BACKEND_URL/webhooks/paymongo" -H 'content-type: application/json' -d '{}'
+   ```
+
+Local testing: put both values in `apps/backend/.env` (`PAYMONGO_SECRET_KEY` and `PAYMONGO_WEBHOOK_SECRET`; the file
+is gitignored). PayMongo can't reach localhost, so locally no webhook arrives: the success page's server-side check of
+the checkout session confirms the booking instead.
+
+**Refunds.** A payment made within its hold keeps the booking's slots, however late PayMongo reports it, unless a
+cleanup expired the hold before the payment was recorded; then it counts as late. A payment made after its hold lapsed
+re-claims the same slots if they are still free. If they were taken meanwhile, the slot has
+already started, or the booking was cancelled, the booking becomes `needs_refund`, with the payment recorded on it.
+Refund it by hand in the PayMongo test dashboard, finding the payment by the booking's `payment_id`. The booking stays
+flagged `needs_refund` on the dashboard as an audit trail; nothing in the app clears it. A paid session of one of
+our bookings that the app rejects (wrong amount or metadata) is logged as `payment.rejected … payment=<id>` at ERROR:
+refund that payment too. An unknown session is only a WARNING and never ours to refund: PayMongo sends every webhook
+on the account, which other apps and local development share.
+
+If the test secret key or the webhook secret leaks, follow `## Secret exposure`: roll the key in the PayMongo
+dashboard (test mode); for the webhook secret, disable the webhook (`POST /v1/webhooks/<id>/disable`, with the same
+`curl -K -` here-string as step 2, never `-u`) and register a new one with step 2.
