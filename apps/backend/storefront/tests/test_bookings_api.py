@@ -531,3 +531,26 @@ def test_a_failed_save_of_the_session_id_frees_the_slot(client, monkeypatch, cap
     assert f"booking.checkout_failed ref={failed.reference} error=IntegrityError" in caplog.text
     for pii in (EMAIL, NAME, MOBILE):
         assert pii not in caplog.text
+
+
+@pytest.mark.django_db
+def test_a_failed_release_still_logs_the_checkout_failure_and_answers_503(
+    client, monkeypatch, caplog
+):
+    caplog.set_level(logging.INFO)
+    use_fake_paymongo(
+        monkeypatch, PayMongoError("PayMongo responded 502", 502, ("resource_failed",))
+    )
+
+    def failing_release(booking, *, status, now=None):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(views, "release", failing_release)
+
+    response = post(client, booking_body())
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "payments_unavailable"}
+    reference = Booking.objects.get().reference
+    assert f"booking.checkout_failed ref={reference}" in caplog.text
+    assert f"booking.release_failed ref={reference}" in caplog.text

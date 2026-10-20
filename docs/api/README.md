@@ -56,8 +56,8 @@ Authorization: Bearer <INTERNAL_API_TOKEN>
 Counted per client IP in Postgres, in fixed 10-minute windows, across all instances. The Next.js server sends the
 visitor's IP as `client_ip`, which is normalised before it is counted:
 
-- an IPv6 address is counted per /64 network (one subscriber's usual allocation), so every address in a /64 shares
-  one window;
+- an IPv6 address is counted per /64 network (the smallest usual allocation; a client with a larger delegation, such
+  as a /56 or /48, gets more windows), so every address in a /64 shares one window;
 - an IPv4-mapped IPv6 address (`::ffff:203.0.113.10`) counts as its IPv4 address;
 - an address with a zone ID (`fe80::1%eth0`) is invalid (`400`, `client_ip` in `fields`).
 

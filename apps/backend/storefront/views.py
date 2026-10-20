@@ -203,6 +203,15 @@ def checkout_line_item(booking: Booking) -> str:
     return f"{booking.court.name} · {Sport(booking.sport).label} · {day}, {span}"
 
 
+def _release_failed_hold(booking: Booking) -> None:
+    """Free the slot of a hold whose checkout failed. If that fails too, the hold lapses on its own
+    within 20 minutes, so log it and keep the checkout failure as the outcome."""
+    try:
+        release(booking, status=Status.EXPIRED)
+    except Exception as error:
+        log_error("booking.release_failed", error, ref=booking.reference)
+
+
 @require_service_token
 @require_POST
 def create_booking(request):
@@ -291,12 +300,12 @@ def create_booking(request):
         booking.checkout_session_id = session.id
         booking.save(update_fields=["checkout_session_id", "updated_at"])
     except (PayMongoError, PaymentsConfigError) as error:
-        release(booking, status=Status.EXPIRED)
         log_error("booking.checkout_failed", error, ref=booking.reference)
+        _release_failed_hold(booking)
         return json_response({"error": "payments_unavailable"}, status=503)
     except Exception as error:
-        release(booking, status=Status.EXPIRED)
         log_error("booking.checkout_failed", error, ref=booking.reference)
+        _release_failed_hold(booking)
         raise
 
     return json_response(
