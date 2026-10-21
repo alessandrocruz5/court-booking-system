@@ -15,7 +15,11 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/api/fixtures/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/api/fixtures/**",
+        "$TURBO_ROOT$/apps/web/src/content/site.ts"
+      ],
       "outputs": []
     }
   }

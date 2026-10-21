@@ -484,9 +484,12 @@ gcloud scheduler jobs create http cb-nightly-trigger \
   --oauth-token-scope https://www.googleapis.com/auth/cloud-platform
 ```
 
-Run it by hand (after a deploy, say, or to check it), and read the last runs and their logs:
+Run it by hand (after a deploy, say, or to check it), and read the last runs and their logs. First check that no execution
+is still running: two overlapping runs can leave a partial demo reseed, which the next night's run repairs. The job has
+no lock, because session advisory locks don't hold through Neon's transaction-mode pooler.
 
 ```sh
+gcloud run jobs executions list --job cb-nightly --region asia-southeast1 --limit 1
 gcloud run jobs execute cb-nightly --region asia-southeast1
 gcloud run jobs executions list --job cb-nightly --region asia-southeast1
 gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="cb-nightly"' --limit 50
