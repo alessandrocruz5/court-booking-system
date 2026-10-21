@@ -1,0 +1,133 @@
+{% extends "dashboard/base.html" %}
+{% comment %}
+The bookings list: a filter bar, a count, and the results (a table on desktop, cards on a phone).
+
+All of the list's state lives in the URL (q, status, sport, source, from, to, sort, page), so the
+filter form is a plain GET form that works without JS; htmx only swaps the `results` partial in
+and pushes the URL. Every value arrives from `dashboard.queries`, already masked for the viewer's
+role, and every URL parameter was validated by `parse_list_params`. Detail links carry the list's
+current query string, so the detail page's back link restores the list as it was.
+Partial, rendered alone for htmx as `dashboard/bookings.html#results`:
+  results  the count, the table, the cards and the pagination (swapped into #results)
+No inline scripts, no hx-on, no inline styles.
+{% endcomment %}
+{% block dashboard_title %}Bookings{% endblock %}
+
+{% block dashboard_content %}
+  <h1>Bookings</h1>
+
+  {% url 'dashboard:bookings' as list_url %}
+  <form class="card filters" method="get" action="{{ list_url }}" hx-get="{{ list_url }}" hx-trigger="change, keyup changed delay:300ms from:#q" hx-target="#results" hx-push-url="true" aria-label="Filter bookings">
+    <div class="field filter-q">
+      <label for="q">Search</label>
+      <input id="q" type="search" name="q" value="{{ params.q }}" maxlength="60" autocomplete="off" placeholder="{% if request.staff_role == 'owner' %}Reference, name, email or mobile{% else %}Reference or name{% endif %}">
+    </div>
+    <div class="field">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">Any status</option>
+        {% for value, label in status_choices %}<option value="{{ value }}"{% if value == params.status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="sport">Sport</label>
+      <select id="sport" name="sport">
+        <option value="">Any sport</option>
+        {% for value, label in sport_choices %}<option value="{{ value }}"{% if value == params.sport %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="source">Source</label>
+      <select id="source" name="source">
+        <option value="">Any source</option>
+        {% for value, label in source_choices %}<option value="{{ value }}"{% if value == params.source %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="from">From</label>
+      <input id="from" type="date" name="from" value="{{ params.date_from|date:'Y-m-d' }}">
+    </div>
+    <div class="field">
+      <label for="to">To</label>
+      <input id="to" type="date" name="to" value="{{ params.date_to|date:'Y-m-d' }}">
+    </div>
+    <div class="field">
+      <label for="sort">Sort</label>
+      <select id="sort" name="sort">
+        {% for value, label in sort_choices %}<option value="{{ value }}"{% if value == params.sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+      <a class="btn btn-outline btn-sm" href="{{ list_url }}">Reset</a>
+    </div>
+  </form>
+
+  <div id="results" class="stack-sm">
+    {% partialdef results inline %}
+      {% url 'dashboard:bookings' as list_url %}
+      <p class="note" role="status" aria-live="polite">
+        {% if page.total %}Showing {{ page.first }}–{{ page.last }} of {{ page.total }} booking{{ page.total|pluralize }}.{% else %}No bookings match.{% endif %}
+      </p>
+
+      {% if page.rows %}
+        <div class="table-scroll bk-table">
+          <table class="data">
+            <caption class="visually-hidden">Bookings</caption>
+            <thead>
+              <tr>
+                <th scope="col">Reference</th>
+                <th scope="col">When</th>
+                <th scope="col">Court</th>
+                <th scope="col">Customer</th>
+                <th scope="col">Source</th>
+                <th scope="col">Status</th>
+                <th scope="col" class="num">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in page.rows %}
+                <tr>
+                  <th scope="row"><a href="{% url 'dashboard:booking_detail' row.reference %}{% if page.query %}?{{ page.query }}{% endif %}">{{ row.reference }}</a></th>
+                  <td>{{ row.when }}</td>
+                  <td>{{ row.court }}{% if row.sport %} · {{ row.sport }}{% endif %}</td>
+                  <td>{{ row.name|default:"—" }}{% if row.email %} <span class="note">{{ row.email }}</span>{% endif %}</td>
+                  <td><span class="tag tag-{{ row.source }}">{{ row.source_label }}</span>{% if row.is_demo %} <span class="tag tag-demo">Demo</span>{% endif %}</td>
+                  <td><span class="badge badge-{{ row.status }}">{{ row.status_label }}</span></td>
+                  <td class="num">{{ row.price|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <ul class="bk-cards" aria-label="Bookings">
+          {% for row in page.rows %}
+            <li class="card bk-card">
+              <p class="bk-card-head">
+                <a href="{% url 'dashboard:booking_detail' row.reference %}{% if page.query %}?{{ page.query }}{% endif %}">{{ row.reference }}</a>
+                <span class="badge badge-{{ row.status }}">{{ row.status_label }}</span>
+              </p>
+              <p>{{ row.when }}</p>
+              <p>{{ row.court }}{% if row.sport %} · {{ row.sport }}{% endif %}{% if row.price %} · {{ row.price }}{% endif %}</p>
+              {% if row.name %}<p>{{ row.name }}{% if row.email %} <span class="note">{{ row.email }}</span>{% endif %}</p>{% endif %}
+              <p><span class="tag tag-{{ row.source }}">{{ row.source_label }}</span>{% if row.is_demo %} <span class="tag tag-demo">Demo</span>{% endif %}</p>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if page.pages > 1 %}
+        <nav class="pager" aria-label="Pages">
+          {% if page.has_prev %}
+            <a class="btn btn-outline btn-sm" rel="prev" href="{{ list_url }}{% if page.prev_query %}?{{ page.prev_query }}{% endif %}" hx-get="{{ list_url }}{% if page.prev_query %}?{{ page.prev_query }}{% endif %}" hx-target="#results" hx-push-url="true">‹ Previous</a>
+          {% endif %}
+          <span class="note">Page {{ page.page }} of {{ page.pages }}</span>
+          {% if page.has_next %}
+            <a class="btn btn-outline btn-sm" rel="next" href="{{ list_url }}?{{ page.next_query }}" hx-get="{{ list_url }}?{{ page.next_query }}" hx-target="#results" hx-push-url="true">Next ›</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% endpartialdef %}
+  </div>
+{% endblock %}

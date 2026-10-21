@@ -10,14 +10,15 @@ Pending, expired, cancelled and needs_refund bookings hold no lock and earn noth
 are cash, so their fee is 0 and their net is their price.
 """
 
-from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from dataclasses import dataclass, replace
+from datetime import date, datetime, time, timedelta
+from urllib.parse import urlencode
 
 from django.db.models import Count, IntegerField, Q, Sum
 from django.db.models.functions import Coalesce, ExtractHour, ExtractIsoWeekDay
 from django.utils import timezone
 
-from accounts.roles import Role, can_see_personal_data
+from accounts.roles import Role, can_cancel, can_see_personal_data
 from bookings.models import Booking, SlotLock
 from bookings.rules import (
     CLOSE_HOUR,
@@ -339,4 +340,302 @@ def overview(*, role: Role | None, now: datetime | None = None) -> Overview:
         heatmap=_heatmap(now),
         upcoming=_upcoming(role, now),
         alerts=_alerts(now),
+    )
+
+
+# --- The bookings list and a booking's detail ----------------------------------------------------
+
+PAGE_SIZE = 25
+MAX_QUERY_LENGTH = 60
+DEFAULT_SORT = "-starts_at"
+SORTS = {
+    "-starts_at": "Start time, latest first",
+    "starts_at": "Start time, earliest first",
+    "-created_at": "Newest booked",
+    "-price_centavos": "Price, highest first",
+}
+STATUS_CHOICES = tuple(Status.choices)
+SPORT_CHOICES = tuple(Sport.choices)
+SOURCE_CHOICES = tuple((source.value, SOURCE_LABELS[source]) for source in Source)
+# Dates outside this range are treated as invalid, so `date_to + 1 day` can never overflow.
+_FIRST_DATE = date(2000, 1, 1)
+_LAST_DATE = date(2100, 12, 31)
+
+
+@dataclass(frozen=True)
+class ListParams:
+    """The bookings list's state, as it lives in the URL. Every field is already validated."""
+
+    q: str
+    status: str | None
+    sport: str | None
+    source: str | None
+    date_from: date | None
+    date_to: date | None
+    sort: str
+    page: int
+
+    def query_string(self, page: int | None = None) -> str:
+        """The URL query for these params (defaults left out), optionally at another page."""
+        page = self.page if page is None else page
+        pairs = {
+            "q": self.q,
+            "status": self.status,
+            "sport": self.sport,
+            "source": self.source,
+            "from": self.date_from.isoformat() if self.date_from else None,
+            "to": self.date_to.isoformat() if self.date_to else None,
+            "sort": self.sort if self.sort != DEFAULT_SORT else None,
+            "page": page if page > 1 else None,
+        }
+        return urlencode({key: value for key, value in pairs.items() if value})
+
+
+def _choice(value: str | None, allowed) -> str | None:
+    return value if value in allowed else None
+
+
+def _date(value: str | None) -> date | None:
+    try:
+        parsed = date.fromisoformat(value or "")
+    except ValueError:
+        return None
+    return parsed if _FIRST_DATE <= parsed <= _LAST_DATE else None
+
+
+def _page_number(value: str | None) -> int:
+    try:
+        return max(1, int(value or "1"))
+    except ValueError:
+        return 1
+
+
+def parse_list_params(querydict) -> ListParams:
+    """Read the list's URL parameters defensively: anything invalid falls back to its default."""
+    get = querydict.get
+    sort = get("sort")
+    return ListParams(
+        # Postgres refuses a NUL in a string, so it is dropped rather than left to raise.
+        q=(get("q") or "").replace("\x00", "").strip()[:MAX_QUERY_LENGTH],
+        status=_choice(get("status"), Status.values),
+        sport=_choice(get("sport"), Sport.values),
+        source=_choice(get("source"), Source.values),
+        date_from=_date(get("from")),
+        date_to=_date(get("to")),
+        sort=sort if sort in SORTS else DEFAULT_SORT,
+        page=_page_number(get("page")),
+    )
+
+
+@dataclass(frozen=True)
+class BookingRow:
+    reference: str
+    court: str
+    sport: str  # Label; empty for a block.
+    when: str
+    source: str  # "online", "walk_in" or "block".
+    source_label: str
+    status: str  # The value, for the badge's CSS class.
+    status_label: str
+    is_demo: bool
+    name: str  # The personal fields are masked for the viewer.
+    email: str
+    mobile: str
+    price: str  # Empty for a block.
+
+
+@dataclass(frozen=True)
+class Page:
+    rows: tuple[BookingRow, ...]
+    total: int
+    page: int  # The page actually shown (the requested one, kept within range).
+    pages: int
+    params: ListParams
+
+    @property
+    def first(self) -> int:
+        return (self.page - 1) * PAGE_SIZE + 1 if self.total else 0
+
+    @property
+    def last(self) -> int:
+        return self.first + len(self.rows) - 1 if self.total else 0
+
+    @property
+    def query(self) -> str:
+        return self.params.query_string(self.page)
+
+    @property
+    def prev_query(self) -> str | None:
+        return self.params.query_string(self.page - 1) if self.page > 1 else None
+
+    @property
+    def next_query(self) -> str | None:
+        return self.params.query_string(self.page + 1) if self.page < self.pages else None
+
+    @property
+    def has_prev(self) -> bool:
+        return self.page > 1
+
+    @property
+    def has_next(self) -> bool:
+        return self.page < self.pages
+
+
+@dataclass(frozen=True)
+class BookingDetail:
+    reference: str
+    court: str
+    coverage: str  # "Full court", "Half A" or "Half B".
+    sport: str
+    when: str
+    hours: int
+    source: str
+    source_label: str
+    status: str
+    status_label: str
+    is_demo: bool
+    name: str  # The personal fields are masked for the viewer.
+    email: str
+    mobile: str
+    note: str
+    price: str
+    payment_method: str
+    fee: str  # Empty when none was charged.
+    net: str
+    paid_at: str
+    consent_at: str
+    created_at: str
+    cancelled_at: str
+    anonymized: bool
+    can_cancel: bool
+
+    @property
+    def needs_refund(self) -> bool:
+        return self.status == Status.NEEDS_REFUND
+
+
+def _stamp(moment: datetime | None) -> str:
+    """`2 Nov 2026, 2:00 PM` in venue time, or empty."""
+    if moment is None:
+        return ""
+    local = moment.astimezone(TIME_ZONE)
+    return f"{local.day} {local:%b %Y}, {_clock(moment)}"
+
+
+def _when(booking: Booking) -> str:
+    start = booking.starts_at.astimezone(TIME_ZONE)
+    return (
+        f"{start:%a} {start.day} {start:%b %Y}, "
+        f"{_clock(booking.starts_at)} - {_clock(booking.ends_at)}"
+    )
+
+
+def _personal(role: Role | None, booking: Booking) -> tuple[str, str, str]:
+    """Name, email and mobile as `role` may see them."""
+    if can_see_personal_data(role):
+        return (
+            booking.customer_name or "",
+            booking.customer_email or "",
+            booking.customer_mobile or "",
+        )
+    return (
+        mask_name(booking.customer_name),
+        mask_email(booking.customer_email),
+        mask_mobile(booking.customer_mobile),
+    )
+
+
+def _row(role: Role | None, booking: Booking) -> BookingRow:
+    name, email, mobile = _personal(role, booking)
+    return BookingRow(
+        reference=booking.reference,
+        court=booking.court.name + (f" · Half {booking.half}" if booking.half else ""),
+        sport=Sport(booking.sport).label if booking.sport else "",
+        when=_when(booking),
+        source=booking.source,
+        source_label=SOURCE_LABELS[booking.source],
+        status=booking.status,
+        status_label=Status(booking.status).label,
+        is_demo=booking.is_demo,
+        name=name,
+        email=email,
+        mobile=mobile,
+        price="" if booking.source == Source.BLOCK else peso(booking.price_centavos),
+    )
+
+
+def _search(role: Role | None, text: str) -> Q:
+    """What a search term matches. The viewer's search covers reference and name only, so it can
+    never be used to confirm that an email or mobile number belongs to a customer."""
+    match = Q(reference__icontains=text) | Q(customer_name__icontains=text)
+    if can_see_personal_data(role):
+        match |= Q(customer_email__icontains=text) | Q(customer_mobile__icontains=text)
+    return match
+
+
+def list_bookings(*, role: Role | None, params: ListParams) -> Page:
+    """One page of bookings (25), filtered and sorted by `params`, masked for `role`."""
+    bookings = Booking.objects.select_related("court")
+    if params.q:
+        bookings = bookings.filter(_search(role, params.q))
+    if params.status:
+        bookings = bookings.filter(status=params.status)
+    if params.sport:
+        bookings = bookings.filter(sport=params.sport)
+    if params.source:
+        bookings = bookings.filter(source=params.source)
+    if params.date_from:
+        bookings = bookings.filter(starts_at__gte=_midnight(params.date_from))
+    if params.date_to:
+        bookings = bookings.filter(starts_at__lt=_midnight(params.date_to + timedelta(days=1)))
+    total = bookings.count()
+    pages = max(1, -(-total // PAGE_SIZE))
+    page = min(params.page, pages)
+    offset = (page - 1) * PAGE_SIZE
+    # `reference` breaks ties so a page boundary never repeats or skips a row.
+    rows = bookings.order_by(params.sort, "reference")[offset : offset + PAGE_SIZE]
+    return Page(
+        rows=tuple(_row(role, booking) for booking in rows),
+        total=total,
+        page=page,
+        pages=pages,
+        params=replace(params, page=page),
+    )
+
+
+def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
+    """A booking's full detail, masked for `role`; None when the reference is unknown."""
+    booking = Booking.objects.select_related("court").filter(reference=reference).first()
+    if booking is None:
+        return None
+    name, email, mobile = _personal(role, booking)
+    # A walk-in's note is free text a staff member typed, so only the owner sees it; a block's
+    # note is its reason (maintenance, an event) and is shown to everyone.
+    show_note = booking.source == Source.BLOCK or can_see_personal_data(role)
+    return BookingDetail(
+        reference=booking.reference,
+        court=booking.court.name,
+        coverage=f"Half {booking.half}" if booking.half else "Full court",
+        sport=Sport(booking.sport).label if booking.sport else "",
+        when=_when(booking),
+        hours=booking.hours,
+        source=booking.source,
+        source_label=SOURCE_LABELS[booking.source],
+        status=booking.status,
+        status_label=Status(booking.status).label,
+        is_demo=booking.is_demo,
+        name=name,
+        email=email,
+        mobile=mobile,
+        note=booking.note if show_note else "",
+        price=peso(booking.price_centavos),
+        payment_method=booking.payment_method,
+        fee=peso(booking.fee_centavos) if booking.fee_centavos is not None else "",
+        net=peso(booking.net_centavos) if booking.net_centavos is not None else "",
+        paid_at=_stamp(booking.paid_at),
+        consent_at=_stamp(booking.consent_at),
+        created_at=_stamp(booking.created_at),
+        cancelled_at=_stamp(booking.cancelled_at),
+        anonymized=booking.anonymized_at is not None,
+        can_cancel=can_cancel(role, booking),
     )

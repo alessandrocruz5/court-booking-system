@@ -1,0 +1,86 @@
+{% extends "dashboard/base.html" %}
+{% comment %}
+One booking in full. `detail` comes from `dashboard.queries.get_booking`, already masked for the
+viewer's role, and `can_cancel` was decided on the server: the template only reflects it.
+
+The back link restores the list as it was (`back_query` is the list's own validated query
+string). Cancel posts `return=detail` to the schedule's cancel endpoint, which answers an htmx
+request with `HX-Redirect` back to this page and a plain form post with a 303. A refusal (403,
+429) lands in #panel. No inline scripts, no hx-on, no inline styles.
+{% endcomment %}
+{% block dashboard_title %}Booking {{ detail.reference }}{% endblock %}
+
+{% block dashboard_content %}
+  <p><a href="{% url 'dashboard:bookings' %}{% if back_query %}?{{ back_query }}{% endif %}">‹ All bookings</a></p>
+
+  <div class="stack-sm">
+    <h1>Booking {{ detail.reference }}</h1>
+    <p>
+      <span class="badge badge-{{ detail.status }}">{{ detail.status_label }}</span>
+      <span class="tag tag-{{ detail.source }}">{{ detail.source_label }}</span>
+      {% if detail.is_demo %}<span class="tag tag-demo">Demo</span>{% endif %}
+    </p>
+  </div>
+
+  {% if detail.needs_refund %}
+    <p class="alert alert-error" role="status">This booking was paid after its hold expired, so its slots were not reserved. Refund it in the PayMongo dashboard (test mode).</p>
+  {% endif %}
+
+  <section class="card stack-sm" aria-labelledby="slot-heading">
+    <h2 id="slot-heading">Slot</h2>
+    <dl class="details details-wide">
+      <div><dt>Court</dt><dd>{{ detail.court }}{% if detail.coverage != "Full court" %} · {{ detail.coverage }}{% endif %}</dd></div>
+      <div><dt>When</dt><dd>{{ detail.when }} ({{ detail.hours }} hour{{ detail.hours|pluralize }})</dd></div>
+      {% if detail.sport %}<div><dt>Sport</dt><dd>{{ detail.sport }}</dd></div>{% endif %}
+      {% if detail.note %}<div><dt>Note</dt><dd>{{ detail.note }}</dd></div>{% endif %}
+    </dl>
+  </section>
+
+  <section class="card stack-sm" aria-labelledby="customer-heading">
+    <h2 id="customer-heading">Customer</h2>
+    {% if detail.anonymized %}
+      <p class="note">Anonymized: the customer's personal details were removed 7 days after this booking ended. The slot and payment records remain.</p>
+    {% elif detail.name or detail.email or detail.mobile %}
+      <dl class="details details-wide">
+        {% if detail.name %}<div><dt>Name</dt><dd>{{ detail.name }}</dd></div>{% endif %}
+        {% if detail.email %}<div><dt>Email</dt><dd>{{ detail.email }}</dd></div>{% endif %}
+        {% if detail.mobile %}<div><dt>Mobile</dt><dd>{{ detail.mobile }}</dd></div>{% endif %}
+        {% if detail.consent_at %}<div><dt>Consent given</dt><dd>{{ detail.consent_at }}</dd></div>{% endif %}
+      </dl>
+    {% else %}
+      <p class="note">No customer details on this booking.</p>
+    {% endif %}
+  </section>
+
+  {% if detail.source != "block" %}
+    <section class="card stack-sm" aria-labelledby="payment-heading">
+      <h2 id="payment-heading">Payment</h2>
+      <dl class="details details-wide">
+        <div><dt>Price</dt><dd>{{ detail.price }}</dd></div>
+        {% if detail.payment_method %}<div><dt>Method</dt><dd>{{ detail.payment_method }}</dd></div>{% endif %}
+        {% if detail.fee %}<div><dt>Fee</dt><dd>{{ detail.fee }}</dd></div>{% endif %}
+        {% if detail.net %}<div><dt>Net</dt><dd>{{ detail.net }}</dd></div>{% endif %}
+        <div><dt>Paid</dt><dd>{% if detail.paid_at %}{{ detail.paid_at }}{% elif detail.source == "walk_in" %}Cash at the venue{% else %}Not paid{% endif %}</dd></div>
+      </dl>
+    </section>
+  {% endif %}
+
+  <section class="card stack-sm" aria-labelledby="record-heading">
+    <h2 id="record-heading">Record</h2>
+    <dl class="details details-wide">
+      <div><dt>Created</dt><dd>{{ detail.created_at }}</dd></div>
+      {% if detail.cancelled_at %}<div><dt>Cancelled</dt><dd>{{ detail.cancelled_at }}</dd></div>{% endif %}
+    </dl>
+  </section>
+
+  {% if detail.can_cancel %}
+    <form class="stack-sm" method="post" action="{% url 'dashboard:cancel' detail.reference %}" hx-post="{% url 'dashboard:cancel' detail.reference %}" hx-target="#panel" hx-confirm="Cancel booking {{ detail.reference }}? Its slots become free.">
+      {% csrf_token %}
+      <input type="hidden" name="return" value="detail">
+      <div>
+        <button type="submit" class="btn btn-accent">Cancel booking</button>
+      </div>
+    </form>
+  {% endif %}
+  <div id="panel" class="panel" role="status" aria-live="polite"></div>
+{% endblock %}

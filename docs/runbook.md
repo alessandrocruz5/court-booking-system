@@ -595,3 +595,44 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
 
   Then click **Explore the owner demo**: the header says `VIEWER`. Sign out, then sign in with the owner account: the
   header says `OWNER`.
+
+## Pre-release checklist
+
+Owner's sign-off before a release or before sharing the demo. Each step names its own check; sections link to the
+setup they assume.
+
+- [ ] **Neon.** The `main` and `dev` branches exist; migrations ran as the owner on both; `cb_app_login` exists on
+  both; and `psql "$DATABASE_URL" -c "CREATE TABLE x(id int)"` fails as `cb_app_login`. See
+  [Neon (once)](#neon-once) and [Database roles and migrations](#database-roles-and-migrations).
+- [ ] **Secret Manager.** All 6 secrets hold real values (no `pending` placeholders), and exactly 6 versions are
+  active. See [Cloud Run (once)](#cloud-run-once).
+- [ ] **GitHub variables.** `GCP_PROJECT_ID`, `GCP_WIF_PROVIDER`, `GCP_DEPLOY_SA`, `BACKEND_URL`, `WEB_URL` and
+  `DEMO_VIEWER_EMAIL` are set, and the last Deploy run is green. See [Deploy](#deploy).
+- [ ] **Staff accounts.** `seed_staff` ran against `main`, and the demo button signs in as VIEWER. See
+  [Staff dashboard](#staff-dashboard).
+- [ ] **PayMongo (test mode).** A webhook points to `$BACKEND_URL/webhooks/paymongo` for the event
+  `checkout_session.payment.paid`, and its secret is in `cb-paymongo-webhook-secret`. See
+  [PayMongo (test mode)](#paymongo-test-mode).
+- [ ] **End-to-end booking.** Book a tennis court on `$WEB_URL`, pay with the test card `4343 4343 4343 4345`, see the
+  `KC-…` reference, find it on `$WEB_URL/booking`, then see it on the dashboard schedule (signed in as owner).
+- [ ] **Webhook with the tab closed.** Start a booking, pay, close the tab before the redirect, and confirm the booking
+  is confirmed on the dashboard within a minute.
+- [ ] **Cancel path.** Start a booking, click back or cancel on PayMongo, and confirm `/book/cancelled` says released
+  and the slot is free again.
+- [ ] **Staff sign-in limits (production).** Run every "Check it" step under [Staff dashboard](#staff-dashboard)
+  against `$BACKEND_URL` on Cloud Run: the sign-in lockout, the second-network check and the spoofed
+  `X-Forwarded-For` loop. If the spoofed requests are not rate-limited, or the second network is locked out too, stop
+  and fix the rightmost-entry assumption in `core/http.py` before sharing the demo. Then, on the web: 11 lookups on
+  `$WEB_URL/booking` from the first network (the 11th says "Too many lookups"), then one from a second network, which
+  must answer normally.
+- [ ] **Nightly job.** Cloud Scheduler `cb-nightly-trigger` exists. Run
+  `gcloud run jobs execute cb-nightly --region asia-southeast1` once, and check the logs show counts only (no emails).
+  See [Demo data and nightly job](#demo-data-and-nightly-job).
+- [ ] **Free tier.** `gcloud run services describe cb-web` and `cb-backend` show maxScale 1 and no minScale; the $1
+  budget alert exists; the Artifact Registry cleanup policy is active; and there are no uptime checks. See
+  [Cloud Run (once)](#cloud-run-once).
+- [ ] **Banner.** "Fictional venue · Test mode, no real payments" is visible on `$WEB_URL/`, `/book`, `/privacy`, a 404
+  page, and `/dashboard/login/`.
+- [ ] **Dashboard in production.** Signed in as the owner on Cloud Run (`$BACKEND_URL/dashboard/`), open Overview,
+  Schedule (add and cancel a walk-in) and Bookings (search, open a detail) with the browser devtools console open.
+  Confirm there are no Content-Security-Policy violations and no htmx errors.

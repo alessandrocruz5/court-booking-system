@@ -268,6 +268,16 @@ def release(booking: Booking, *, status: str, now: datetime | None = None) -> bo
     return True
 
 
+def cancel_booking(booking: Booking, *, by_role: str, now: datetime | None = None) -> bool:
+    """Cancel `booking` for a staff member, freeing its slots. The caller has already checked
+    `accounts.roles.can_cancel`; this makes that call site explicit. Returns `release`'s result.
+    The log carries the reference and the role only."""
+    cancelled = release(booking, status=Status.CANCELLED, now=now)
+    if cancelled:
+        logger.info("booking.cancelled ref=%s role=%s", booking.reference, by_role)
+    return cancelled
+
+
 def expire_stale_holds(*, now: datetime | None = None) -> int:
     """Expire every pending booking whose hold has lapsed and free its slots. Returns the count."""
     now = now or timezone.now()
