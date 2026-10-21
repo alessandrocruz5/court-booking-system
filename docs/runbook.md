@@ -420,3 +420,79 @@ on the account, which other apps and local development share.
 If the test secret key or the webhook secret leaks, follow `## Secret exposure`: roll the key in the PayMongo
 dashboard (test mode); for the webhook secret, disable the webhook (`POST /v1/webhooks/<id>/disable`, with the same
 `curl -K -` here-string as step 2, never `-u`) and register a new one with step 2.
+
+## Demo data and nightly job
+
+Kalaro Courts is fictional, so nobody books it for real. To make the demo look like a busy venue on any day someone
+opens it, `manage.py seed_demo` deletes every demo booking (`is_demo`) and regenerates a fresh set from today − 30 to
+today + 6: walk-ins, online bookings with fake test-mode payments (`pay_demo_…`, illustrative fees, not PayMongo's
+pricing) and a block or two a week. The data is seeded by the date, so the same day always gives the same bookings.
+Every demo slot is claimed through the `SlotLock` constraint like any other booking, so a demo booking that clashes
+with a real one is skipped and the real booking wins. Demo bookings also stay off the slots of real unpaid online
+bookings that haven't started (pending, or expired after a lapsed hold), so a late payment can still re-claim them
+instead of ending up `needs_refund`. Real bookings are never changed or deleted by the seed.
+Demo customers use `@example.com` emails and `+63900000xxxx` mobiles.
+
+The Cloud Run Job `cb-nightly` runs `python manage.py nightly` once a day at 03:00 Manila time. Each step logs counts
+only (logger `cb.nightly`, never row contents), and a failing step is logged by its exception class without
+stopping the others; the job then exits 1 and Cloud Run retries it once (`--max-retries 1`). Every step is safe to
+repeat. The steps:
+
+1. Expire lapsed payment holds and free their slots.
+2. Anonymize visitor bookings 7 days after they end (RA 10173): the name is blanked, the email and mobile are
+   cleared and `anonymized_at` is set; the price, payment and slot data stay. With one run a day, that is within
+   8 days, as `/privacy` states. Demo rows are skipped: they are regenerated instead.
+3. Delete rate-limit counters older than 10 minutes, the longest window. Only a window still open at 03:00
+   survives to the next night, so every counter is gone within a day and a few minutes (`/privacy`: within a day).
+4. Clear expired sessions.
+5. Regenerate the demo bookings, only when `ALLOW_DEMO_SEED=1`. The deploy workflow sets it on `cb-nightly` only,
+   never on the `cb-backend` service.
+
+The job connects as `cb_app_login` (DML only). At demo scale (about 3,300 bookings, roughly 23,000 statements) the
+reseed takes about 20 s locally; over the Neon pooler expect 1–2 minutes, inside the 600 s task timeout. Check the
+first production run's duration with `gcloud run jobs executions list` (below) before relying on that.
+
+Run the seed locally, from `apps/backend`, against the `db` service. Without `ALLOW_DEMO_SEED=1` it refuses and exits
+2:
+
+```sh
+ALLOW_DEMO_SEED=1 uv run --env-file .env python manage.py seed_demo
+```
+
+`uv run --env-file .env python manage.py nightly` runs the whole job locally; it reseeds only if `ALLOW_DEMO_SEED=1`
+is set too.
+
+**The Cloud Scheduler trigger (once).** After this unit's first deploy has created `cb-nightly`, from the laptop
+with the shell variables from `## Cloud Run (once)`. A dedicated service account, `cb-scheduler`, gets
+`roles/run.invoker` on the job only, and Cloud Scheduler calls the Cloud Run Jobs `:run` API with an OAuth token for
+it. Not `cb-runtime`: the public services run as that account, so a compromised instance could then trigger the job.
+This is 1 of the 3 free Scheduler jobs per billing account (`## Cloud Run (once)`, step 9), so it costs nothing.
+
+```sh
+PROJECT_ID=<your-project-id>
+gcloud iam service-accounts create cb-scheduler --display-name "Cloud Scheduler: cb-nightly trigger"
+SCHEDULER="cb-scheduler@$PROJECT_ID.iam.gserviceaccount.com"
+gcloud run jobs add-iam-policy-binding cb-nightly --region asia-southeast1 \
+  --member "serviceAccount:$SCHEDULER" --role roles/run.invoker
+gcloud scheduler jobs create http cb-nightly-trigger \
+  --location asia-southeast1 --schedule "0 3 * * *" --time-zone "Asia/Manila" \
+  --uri "https://asia-southeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/cb-nightly:run" \
+  --http-method POST \
+  --oauth-service-account-email "$SCHEDULER" \
+  --oauth-token-scope https://www.googleapis.com/auth/cloud-platform
+```
+
+Run it by hand (after a deploy, say, or to check it), and read the last runs and their logs:
+
+```sh
+gcloud run jobs execute cb-nightly --region asia-southeast1
+gcloud run jobs executions list --job cb-nightly --region asia-southeast1
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="cb-nightly"' --limit 50
+```
+
+If an execution fails twice, the next scheduled run still repeats every step, so anonymization catches up the next
+night. A run that keeps failing breaks the `/privacy` promise: fix it within the day.
+
+The nightly job is the only scheduled database use. It wakes Neon once a day for a few minutes (plus the 5 minutes
+before the compute scales to zero), a small share of the 100 CU-hours a month. Don't add other schedules, uptime
+checks or keep-warm pings that touch the database.
