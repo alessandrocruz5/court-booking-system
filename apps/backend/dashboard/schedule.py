@@ -168,7 +168,7 @@ def _booking_cell(row_label: str, booking: Booking, start: int, end: int, *, rol
         sport=Sport(booking.sport).label if booking.sport else "",
         name=name,
         text=_text(booking, name),
-        can_cancel=can_cancel(role, booking),
+        can_cancel=can_cancel(role, booking, now=now),
     )
 
 
@@ -227,6 +227,8 @@ def build_grid(day: date, *, role: Role | None, now: datetime | None = None) -> 
 
 def get_booking(reference: str) -> Booking | None:
     """The booking with `reference`, for a permission check and a write through `bookings.holds`."""
+    if "\x00" in reference:  # Postgres refuses a NUL in a string, so it is a miss, not a 500.
+        return None
     return Booking.objects.select_related("court").filter(reference=reference).first()
 
 
@@ -242,14 +244,18 @@ def _clock(moment: datetime) -> str:
     return moment.astimezone(TIME_ZONE).strftime("%I:%M %p").lstrip("0")
 
 
-def booking_detail(booking: Booking, *, role: Role | None) -> BookingDetail:
-    """The side panel's view of `booking`, masked for `role`."""
+def booking_detail(
+    booking: Booking, *, role: Role | None, now: datetime | None = None
+) -> BookingDetail:
+    """The side panel's view of `booking`, masked for `role`. `now` is injectable so tests can
+    pin the clock."""
+    now = now or timezone.now()
     raw = can_see_personal_data(role)
     start = booking.starts_at.astimezone(TIME_ZONE)
     # A walk-in's note is free text a staff member typed, so only the owner sees it; a block's
     # note is its reason (maintenance, an event) and is shown to everyone.
     show_note = booking.source == Source.BLOCK or raw
-    cancellable = can_cancel(role, booking)
+    cancellable = can_cancel(role, booking, now=now)
     return BookingDetail(
         reference=booking.reference,
         court=booking.court.name,

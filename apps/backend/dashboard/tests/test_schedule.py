@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from html import escape
 from html.parser import HTMLParser
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -49,7 +50,9 @@ def make_user(role: Role) -> User:
     return user
 
 
-def walk_in(code="mp-01", day=TODAY, hour=14, *, sport="badminton", name="", is_demo=False):
+def walk_in(
+    code="mp-01", day=TODAY, hour=14, *, sport="badminton", name="", is_demo=False, now=NOW
+):
     return holds.create_staff_booking(
         source=Source.WALK_IN,
         court=court(code),
@@ -62,7 +65,7 @@ def walk_in(code="mp-01", day=TODAY, hour=14, *, sport="badminton", name="", is_
         created_by=None,
         customer_name=name,
         is_demo=is_demo,
-        now=NOW,
+        now=now,
     )
 
 
@@ -445,7 +448,7 @@ class TestPanel:
     def test_owner_panel_is_raw_with_cancel_and_the_refund_note(self, owner):
         booking = online()
 
-        html = owner.get(booking_url(booking.reference)).content.decode()
+        html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
 
         assert "maria.santos@example.com" in html and "+639000000001" in html
         assert f'hx-post="{cancel_url(booking.reference)}"' in html
@@ -456,7 +459,7 @@ class TestPanel:
     def test_owner_panel_has_no_refund_note_on_a_demo_online_booking(self, owner):
         booking = online(is_demo=True)
 
-        html = owner.get(booking_url(booking.reference)).content.decode()
+        html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
 
         assert f'hx-post="{cancel_url(booking.reference)}"' in html
         assert "PayMongo" not in html
@@ -464,7 +467,7 @@ class TestPanel:
 
     def test_viewer_sees_cancel_for_demo_and_walk_in_bookings(self, viewer):
         for booking in (online(is_demo=True), walk_in("mp-02")):
-            html = viewer.get(booking_url(booking.reference)).content.decode()
+            html = viewer.get(booking_url(booking.reference), headers=HX).content.decode()
             assert "Cancel booking" in html
             assert "PayMongo" not in html
 
@@ -484,10 +487,12 @@ class TestPanel:
         )
         client.force_login(make_user(Role.VIEWER))
         assert (
-            "Juan&#x27;s office" not in client.get(booking_url(booking.reference)).content.decode()
+            "Juan&#x27;s office"
+            not in client.get(booking_url(booking.reference), headers=HX).content.decode()
         )
         client.force_login(make_user(Role.OWNER))
-        assert "Juan&#x27;s office" in client.get(booking_url(booking.reference)).content.decode()
+        html = client.get(booking_url(booking.reference), headers=HX).content.decode()
+        assert "Juan&#x27;s office" in html
 
     def test_unknown_reference_is_404(self, owner):
         assert owner.get(booking_url("NOPE12345")).status_code == 404
@@ -660,6 +665,29 @@ class TestCancel:
     def test_get_is_not_allowed(self, owner):
         assert owner.get(cancel_url(walk_in().reference)).status_code == 405
 
+    def test_viewer_cannot_cancel_a_walk_in_that_has_ended(self, viewer):
+        # 10:00-11:00, made at 09:00, so it ended before NOW (12:00).
+        booking = walk_in(hour=10, now=NOW - timedelta(hours=3))
+
+        html = viewer.get(booking_url(booking.reference), headers=HX).content.decode()
+        response = viewer.post(cancel_url(booking.reference), headers=HX)
+
+        assert "Cancel booking" not in html and "hx-post" not in html
+        assert response.status_code == 403
+        assert "You can&#x27;t cancel this booking." in response.content.decode()
+        booking.refresh_from_db()
+        assert booking.status == Status.CONFIRMED and booking.cancelled_at is None
+        assert SlotLock.objects.filter(booking=booking).count() == 1
+
+    def test_owner_can_cancel_a_walk_in_that_has_ended(self, owner):
+        booking = walk_in(hour=10, now=NOW - timedelta(hours=3))
+
+        response = owner.post(cancel_url(booking.reference), headers=HX)
+
+        assert response.status_code == 200
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED and booking.cancelled_at == NOW
+
 
 def test_cancel_booking_wraps_release(db, caplog):
     booking = walk_in()
@@ -707,15 +735,33 @@ class TestNewPanel:
         assert 'hx-post="/dashboard/schedule/new/"' in html
         assert_csp_safe(html)
 
+    def test_the_note_is_a_reason_list_for_the_viewer(self, viewer):
+        html = viewer.get(
+            NEW, {"court": "tn-1", "space": "F", "hour": "9"}, headers=HX
+        ).content.decode()
+
+        assert '<select name="note"' in html
+        for reason in forms.BLOCK_REASONS:
+            assert f'<option value="{reason}"' in html
+
+    def test_the_note_is_free_text_for_the_owner(self, owner):
+        html = owner.get(
+            NEW, {"court": "tn-1", "space": "F", "hour": "9"}, headers=HX
+        ).content.decode()
+
+        assert '<input type="text" name="note"' in html and '<select name="note"' not in html
+
     def test_non_basketball_has_no_half_fields(self, owner):
-        html = owner.get(NEW, {"court": "tn-1", "space": "F", "hour": "9"}).content.decode()
+        html = owner.get(
+            NEW, {"court": "tn-1", "space": "F", "hour": "9"}, headers=HX
+        ).content.decode()
 
         assert 'name="half"' not in html and 'name="coverage"' not in html
         assert '<option value="tennis" selected>Tennis</option>' in html
 
     @pytest.mark.parametrize("params", [{"court": "zz-9", "hour": "9"}, {"court": "tn-1"}])
     def test_bad_cell_is_404(self, owner, params):
-        assert owner.get(NEW, params).status_code == 404
+        assert owner.get(NEW, params, headers=HX).status_code == 404
 
 
 @pytest.mark.django_db
@@ -753,10 +799,32 @@ class TestCreate:
         assert "A block needs a note" in response.content.decode()
         assert not Booking.objects.exists()
 
+    def test_the_viewer_cannot_type_a_block_note(self, viewer):
+        response = viewer.post(NEW, form_data(kind="block", note="Spray paint"), headers=HX)
+
+        assert "Select a valid choice" in response.content.decode()
+        assert not Booking.objects.exists()
+
+    def test_the_viewer_can_block_with_a_listed_reason(self, viewer):
+        response = viewer.post(NEW, form_data(kind="block", note="Maintenance"), headers=HX)
+
+        assert "Booking added." in response.content.decode()
+        assert Booking.objects.get().note == "Maintenance"
+
+    def test_the_owner_can_still_type_a_block_note(self, owner):
+        owner.post(NEW, form_data(kind="block", note="Spray paint"), headers=HX)
+
+        assert Booking.objects.get().note == "Spray paint"
+
+    def test_every_demo_block_note_is_a_listed_reason(self):
+        from bookings import demo
+
+        assert {n for n, *_ in demo.BLOCKS} <= set(forms.BLOCK_REASONS)
+
     def test_a_block_on_basketball_fills_both_halves(self, owner):
         data = form_data(kind="block", court="bb-1", sport="", note="League night", hours="3")
 
-        assert owner.post(NEW, data).status_code == 200
+        assert owner.post(NEW, data, headers=HX).status_code == 200
 
         booking = Booking.objects.get()
         assert (booking.source, booking.sport, booking.price_centavos) == ("block", None, 0)
@@ -863,12 +931,16 @@ class TestWriteLimit:
     def test_viewer_21st_write_in_ten_minutes_is_refused(self, viewer):
         cells = self._cells()
         for _ in range(19):
-            assert viewer.post(NEW, form_data(**next(cells))).status_code == 200
+            assert viewer.post(NEW, form_data(**next(cells)), headers=HX).status_code == 200
         demo = Booking.objects.filter(is_demo=True).first()
-        assert viewer.post(cancel_url(demo.reference)).status_code == 200  # The 20th write.
+        assert (
+            viewer.post(cancel_url(demo.reference), headers=HX).status_code == 200
+        )  # The 20th write.
 
         create = viewer.post(NEW, form_data(**next(cells)), headers=HX)
-        cancel = viewer.post(cancel_url(Booking.objects.filter(status="confirmed")[0].reference))
+        cancel = viewer.post(
+            cancel_url(Booking.objects.filter(status="confirmed")[0].reference), headers=HX
+        )
 
         assert create.status_code == 429 and cancel.status_code == 429
         assert "Demo limit reached. Try again in a few minutes." in create.content.decode()
@@ -879,9 +951,37 @@ class TestWriteLimit:
     def test_the_owner_is_not_limited(self, owner):
         cells = self._cells()
         for _ in range(21):
-            assert owner.post(NEW, form_data(**next(cells))).status_code == 200
+            assert owner.post(NEW, form_data(**next(cells)), headers=HX).status_code == 200
 
         assert Booking.objects.count() == 21
+
+
+@pytest.mark.django_db
+class TestNulBytes:
+    def test_a_nul_in_a_reference_is_a_404(self, owner):
+        assert owner.get(booking_url("KC-%00AAAA"), headers=HX).status_code == 404
+        assert owner.post(cancel_url("KC-%00AAAA"), headers=HX).status_code == 404
+
+    def test_a_nul_in_the_court_is_a_404(self, owner):
+        response = owner.get(
+            f"{NEW}?court=%00&space=F&hour=10&date={TODAY.isoformat()}", headers=HX
+        )
+
+        assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestInvalidWritesAreNotCharged:
+    def test_invalid_viewer_posts_leave_the_budget_alone(self, viewer):
+        for _ in range(views.WRITE_LIMIT + 1):
+            response = viewer.post(NEW, form_data(kind="block", note=""), headers=HX)
+            assert response.status_code == 200
+            assert "A block needs a note" in response.content.decode()
+
+        response = viewer.post(NEW, form_data(), headers=HX)
+
+        assert response.status_code == 200
+        assert "Booking added." in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -955,3 +1055,78 @@ class TestDemoLiveCap:
 
 def test_viewer_days_ahead_is_the_storefront_window():
     assert schedule.VIEWER_DAYS_AHEAD == rules.WINDOW_DAYS - 1
+
+
+# --- fragment endpoints without htmx -------------------------------------------------------------
+
+BANNER = "Fictional venue · Test mode, no real payments"
+
+
+@pytest.mark.django_db
+class TestWithoutHtmx:
+    def test_panel_redirects_to_the_detail_page(self, owner):
+        booking = online()
+
+        response = owner.get(booking_url(booking.reference))
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/dashboard/bookings/{booking.reference}/"
+        assert owner.get(booking_url("KC-ZZZZZZ")).status_code == 404
+
+    def test_panel_with_htmx_is_still_a_bare_partial(self, owner):
+        booking = online()
+
+        html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
+
+        assert booking.reference in html and "<html" not in html
+
+    def test_new_form_redirects_to_the_schedule(self, owner):
+        day = TODAY.isoformat()
+
+        response = owner.get(f"{NEW}?court=mp-01&hour=15&date={day}")
+
+        assert response.status_code == 302
+        assert response["Location"] == f"/dashboard/schedule/?date={day}"
+
+    def test_new_form_with_htmx_is_still_a_bare_partial(self, owner):
+        html = owner.get(
+            f"{NEW}?court=mp-01&hour=15&date={TODAY.isoformat()}", headers=HX
+        ).content.decode()
+
+        assert "<form" in html and "<html" not in html
+
+    def test_valid_create_redirects_to_that_day(self, owner):
+        response = owner.post(NEW, form_data())
+
+        assert response.status_code == 303
+        assert response["Location"] == f"/dashboard/schedule/?date={TODAY.isoformat()}"
+        assert Booking.objects.count() == 1
+
+    def test_invalid_create_is_a_full_page_with_the_error(self, owner):
+        response = owner.post(NEW, form_data(kind="block", note=""))
+        html = response.content.decode()
+
+        assert response.status_code == 200
+        assert BANNER in html and "<html" in html and "hx-disable" in html
+        assert "A block needs a note" in html
+        assert Booking.objects.count() == 0
+
+    def test_viewer_cancel_refusal_is_a_full_page(self, viewer):
+        booking = online()
+
+        response = viewer.post(cancel_url(booking.reference))
+        html = response.content.decode()
+
+        assert response.status_code == 403
+        assert BANNER in html and "<html" in html
+        assert escape(views.CANT_CANCEL) in html
+
+    def test_owner_cancel_redirects_to_the_bookings_day(self, owner):
+        booking = online()
+
+        response = owner.post(cancel_url(booking.reference))
+
+        assert response.status_code == 303
+        assert response["Location"] == f"/dashboard/schedule/?date={TODAY.isoformat()}"
+        booking.refresh_from_db()
+        assert booking.status != Status.CONFIRMED
