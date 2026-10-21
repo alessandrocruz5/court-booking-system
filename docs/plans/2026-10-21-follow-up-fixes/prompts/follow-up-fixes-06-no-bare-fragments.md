@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 06
-unit: U3
+unit: CBS-14
 status: todo
 model: sonnet
 effort: high
@@ -47,8 +47,10 @@ stay exactly as they are.
   - `_panel_message` and `_form_response`: render `dashboard/fragment_page.html` with the same context, the same
     status, and `fragment` set to `"dashboard/schedule.html#panel"` or `"dashboard/schedule.html#form"`.
 - `fragment_page.html`: `{% extends "dashboard/base.html" %}`, `dashboard_title` "Schedule", and in
-  `dashboard_content`: `{% include fragment %}` followed by a link back to the schedule (`{% url
-  'dashboard:schedule' %}`). Django 6's built-in template partials accept `"template.html#partial"` in `include` and
+  `dashboard_content`: `<div hx-disable>{% include fragment %}</div>` followed by a link back to the schedule (`{% url
+  'dashboard:schedule' %}`). `hx-disable` is needed because `dashboard/base.html` loads htmx, and the `#form`
+  partial's `hx-post` / `hx-target="#grid"` would otherwise go to a `#grid` this page doesn't have. With it, the form
+  posts as a plain HTML form. Add a comment saying so. Django 6's built-in template partials accept `"template.html#partial"` in `include` and
   `get_template`; prove it with a test. The `#form` partial already has `{% csrf_token %}`. Follow the template
   conventions in `dashboard/base.html`'s comment: no inline scripts or styles, no `hx-on`.
 - Tests in `test_schedule.py` (fixtures `owner`, `viewer`, `HX`, `NEW`, `form_data`, `booking_url`, `cancel_url`; the
@@ -56,7 +58,7 @@ stay exactly as they are.
   - `GET booking_url(ref)` → 302 to `/dashboard/bookings/<ref>/`; an unknown reference is still 404.
   - `GET NEW?court=…&hour=…&date=…` → 302 to `/dashboard/schedule/?date=…`.
   - `POST NEW` valid → 303 to the schedule for that date, and the booking exists.
-  - `POST NEW` invalid → 200 full page containing the banner text, `<html` and the form error.
+  - `POST NEW` invalid → 200 full page containing the banner text, `<html`, `hx-disable` and the form error.
   - The viewer's `POST cancel_url` of a real online booking → 403 full page with the banner and `CANT_CANCEL`.
   - The owner's `POST cancel_url` → 303 to the schedule for the booking's day.
   - One htmx test of each endpoint (existing ones are fine) still gets the partial, with no `<html`.

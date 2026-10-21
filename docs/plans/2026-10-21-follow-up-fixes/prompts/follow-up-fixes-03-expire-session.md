@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 03
-unit: U2
+unit: CBS-13
 status: todo
 model: opus
 effort: high
@@ -80,8 +80,10 @@ files:
   `booking_body`):
   - Give `FakePayMongo` an `expire_checkout_session(self, session_id)` that records into `self.expired: list[str]`
     and returns None.
-  - New test: patch `Booking.save` so the `update_fields=["checkout_session_id", ...]` save raises
-    `django.db.DatabaseError`, and patch `payments.confirm.get_client` to the same fake. `post(...)` raises
+  - New test: wrap the original `Booking.save` with `monkeypatch`. The wrapper raises `django.db.DatabaseError` only
+    when `"checkout_session_id" in (update_fields or ())`, and otherwise delegates to the original:
+    `create_hold`'s `objects.create` and `holds.release` also call `save`, and must keep working. Patch
+    `payments.confirm.get_client` to the same fake. `post(...)` raises
     `DatabaseError` (the test client re-raises; use `pytest.raises`). The booking ends `expired` (slots freed, no
     `SlotLock` rows) and `fake.expired == [SESSION_ID]`.
   - New test: `create_checkout_session` raising `PayMongoError` (existing `use_fake_paymongo(monkeypatch, error=…)`)
@@ -101,7 +103,7 @@ cd /home/apa/Code/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test
-! grep -rn --include='*.py' -e '_expire_checkout' -e '_expire_session' apps/backend
+! grep -rnw --include='*.py' -e '_expire_checkout' -e '_expire_session' apps/backend
 ! grep -n 'get_client' apps/backend/dashboard/views.py
 ```
 - `uv run pytest storefront/tests/test_bookings_api.py dashboard/tests/test_schedule.py payments -q` passes.

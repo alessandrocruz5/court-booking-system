@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 11
-unit: U5
+unit: CBS-16
 status: todo
 model: opus
 effort: high
@@ -65,7 +65,8 @@ files:
     defined in `apps/web/src/lib/booking/checkout-cookie.ts`, written by `startCheckout` in
     `apps/web/src/lib/booking/actions.ts`, and read by `app/book/{success,cancelled}`, and that the backend's
     success/cancel URLs (`storefront/views.py`) carry `?ref=`.
-  - `## Review constraints`, "Payment status comes only from the server" bullet: after "URL parameters are never
+  - `## Review constraints`, "Payment status comes only from the server" bullet (the user approved this wording on
+    2026-10-21): after "URL parameters are never
     trusted.", add "(`?ref=` on `/book/success` and `/book/cancelled` only picks one of the visitor's own cookie
     entries)". Change nothing else.
 

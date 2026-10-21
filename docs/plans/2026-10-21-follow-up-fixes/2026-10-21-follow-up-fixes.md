@@ -1,10 +1,10 @@
 ---
 type: plan
 kind: feature
-status: draft
+status: in-progress
 repo: court-booking-system
 delivery: pr
-base: main
+base: develop
 sprint: 2
 epic:
 created: 2026-10-21
@@ -27,7 +27,7 @@ nightly advisory lock is "dropped, with a runbook note".
 
 | # | Requirement | Source |
 |---|---|---|
-| R1 | Every `/api/v1/*` and `/webhooks/*` response sends `Cache-Control: no-store`. That includes an unmatched-route 404 and a 400/413/500 raised outside a view. | CBS-5, CBS-6 Deferred; review constraint |
+| R1 | Every `/api/v1/*` and `/webhooks/*` response sends `Cache-Control: no-store`. That includes an unmatched-route 404 and a 400 (including `RequestDataTooBig`) or 500 raised outside a view. | CBS-5, CBS-6 Deferred; review constraint |
 | R2 | gunicorn creates no control socket. | CBS-3 follow-up |
 | R3 | IP normalisation exists once: `storefront.views` uses `core.http`'s. | CBS-9 follow-up |
 | R4 | Expiring a checkout session exists once: the dashboard's cancel uses `payments.confirm`'s helper. | CBS-10 follow-up |
@@ -102,7 +102,10 @@ run spans many transactions. **Chosen:** A (user, 2026-10-21).
   - `?ref=` with a well-formed reference selects that entry, or none if it isn't there (never another booking's session). Without a valid `ref`, the newest entry is used.
   - The backend's success/cancel URLs add `?ref=<reference>`. If PayMongo ever drops the query string, the newest-entry fallback gives today's behaviour.
   - Payment status still comes only from `checkout/confirm`/`release`.
-- **Deploy order:** every unit deploys on its own. In U5, the backend's `?ref=` is ignored by an old web build, and a new web build without `ref` falls back to the newest entry.
+- **Deploy order:** every unit stands on its own. In CBS-16, the backend's `?ref=` is ignored by an old web build, and a new web build without `ref` falls back to the newest entry. Deploy rolls out `cb-backend` before `cb-web` (`deploy.yml:88`, `:111`), so a checkout started in between has a `?ref=` URL and a legacy cookie. For that case, `pickCheckout` falls back from a valid but unmatched `ref` to a **legacy (reference-null) entry**, never to another referenced entry (audit 2026-10-21).
+- **Base branch `develop`** (user, 2026-10-21, in the audit command). Units are PRs into `develop`. Before CBS-12, the user runs `git push -u origin develop`, because `develop` isn't on `origin` yet. Merges into `develop` don't deploy. **Release** is a `develop → main` PR after CBS-16, which deploys, and the manual test-mode checks run after it. The user changes `CLAUDE.md` `## Workflow` to `Base branch: develop` in the ledger commit. CI has no `push` run on `develop` (`ci.yml:5-6`); each PR's CI covers its merge ref (accepted).
+- **Constraint clarification approved** (user, 2026-10-21): prompt 11 adds "(`?ref=` on `/book/success` and `/book/cancelled` only picks one of the visitor's own cookie entries)" to the CLAUDE.md "Payment status" review constraint.
+- **`fragment_page.html` disables htmx** around the included partial (`<div hx-disable>`), so the `#form` partial (`hx-target="#grid"`, absent on that page) posts as a plain form (audit 2026-10-21).
 
 **Non-goals:** the SlotLock/occupancy/prune indexes (a laptop migration, and demo scale doesn't need them); digest-pinned base images; Dependabot major/minor ignores; `BACKEND_HOST` trailing slash; `run.developer` instead of `run.admin`; a JSON 405 on the webhook; a `/48` rate-limit bucket; `docs/api/README.md` `BookingSummary.sport` nullability; `releaseHold`'s redundant second release; the "never changed" wording, demo halves ratio, `clear_sessions` clock and `seed_demo` print nits; `_is_reference_clash` duplication; the nightly advisory lock (replaced by R13); the Dockerfile's "control socket" home-dir comment (the home dir stays and is harmless); verifying `clientIpFrom` on Cloud Run (covered by the existing pre-release checklist).
 
@@ -162,6 +165,9 @@ run spans many transactions. **Chosen:** A (user, 2026-10-21).
 | Viewer create test fixtures (`form_data(kind="block", note=…)`) | Non-graph | R10 | Possibly: a viewer test posting a free-text block note now fails validation | 07 updates those tests to use a listed reason |
 | `turbo.json` test cache | Non-graph | New input | No: it only widens invalidation | — |
 | PayMongo redirect (`success_url`/`cancel_url`) | Non-graph (external) | `?ref=` query | Unverified: PayMongo is expected to keep the query string | Fallback to the newest entry; E2E manual check on test mode |
+| Rollout window: new backend, old web (audit) | Non-graph | `?ref=` URL plus a legacy cookie | **Yes**, without a fallback | `pickCheckout` falls back to a legacy entry (prompt 10) |
+| `fragment_page.html` with the `#form` partial (audit) | Non-graph | htmx loaded, `#grid` absent | **Yes**: the submit does nothing with JS on | `<div hx-disable>` wrapper (prompt 06) |
+| Deploy of `develop` merges (audit) | Non-graph | `deploy.yml:7-10` runs only for `main` | Merges don't deploy | Release PR `develop → main` after CBS-16 |
 | Contract fixtures / `schemas.ts` | Non-graph | — | No: no API body changes | — |
 | `cb_checkout` readers (`app/book/{success,cancelled}`) | Hidden coupling | Format v2 | **Yes** if the writer changed first | 10 (readers accept v1 and v2) runs before 11 (writer); CLAUDE.md updated in 11 |
 | `/privacy` | Compliance | — | No: the cookie holds booking references and session IDs, no personal data; storage and retention are unchanged | — |
@@ -171,28 +177,28 @@ run spans many transactions. **Chosen:** A (user, 2026-10-21).
 ## Units
 | Unit | Title | Category | Prompts | Depends | High-stakes | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| U1 | API no-store and backend hygiene | Fixed | 01, 02 | — | yes | R1: an unmatched `/api/v1/x` 404 and a disallowed-host `/webhooks/paymongo` 400 send `no-store`. R2: the gunicorn config sets `control_socket_disable = True`. R3: no `_client_ip`/`_normalise` remains. |
-| U2 | One checkout-session expiry, including orphaned sessions | Fixed | 03 | U1 | yes | R4: `dashboard/views.py` has no PayMongo client code of its own. R5: a failed session-ID save releases the hold and expires the session. |
-| U3 | Dashboard hardening | Fixed | 04, 05, 06, 07 | U2 | yes | R6: the viewer's cancel of an ended walk-in is 403. R7: NUL references and `?court=` give 404. R8: invalid viewer creates don't use up the budget. R9: no bare fragment without htmx. R10: the viewer's block note must be a listed reason. R11: the alert names no cause. |
-| U4 | Drift tests and nightly runbook note | Changed | 08 | — | no | R12: three drift/boundary tests pass and fail on a mismatched constant. R13: the runbook line exists. |
-| U5 | Checkout per-tab sessions and result copy | Fixed | 09, 10, 11 | U2 | yes | R14: the neutral `needs_refund` copy. R15: a bad URL releases the hold. R16: two entries, and `?ref=` picks each tab's own session on success and cancel. |
+| CBS-12 | API no-store and backend hygiene | Fixed | 01, 02 | — | yes | R1: an unmatched `/api/v1/x` 404 and a disallowed-host `/webhooks/paymongo` 400 send `no-store`. R2: the gunicorn config sets `control_socket_disable = True`. R3: no `_client_ip`/`_normalise` remains. |
+| CBS-13 | One checkout-session expiry, including orphaned sessions | Fixed | 03 | CBS-12 | yes | R4: `dashboard/views.py` has no PayMongo client code of its own. R5: a failed session-ID save releases the hold and expires the session. |
+| CBS-14 | Dashboard hardening | Fixed | 04, 05, 06, 07 | CBS-13 | yes | R6: the viewer's cancel of an ended walk-in is 403. R7: NUL references and `?court=` give 404. R8: invalid viewer creates don't use up the budget. R9: no bare fragment without htmx. R10: the viewer's block note must be a listed reason. R11: the alert names no cause. |
+| CBS-15 | Drift tests and nightly runbook note | Changed | 08 | — | no | R12: three drift/boundary tests pass and fail on a mismatched constant. R13: the runbook line exists. |
+| CBS-16 | Checkout per-tab sessions and result copy | Fixed | 09, 10, 11 | CBS-13 | yes | R14: the neutral `needs_refund` copy. R15: a bad URL releases the hold. R16: two entries, and `?ref=` picks each tab's own session on success and cancel. |
 
-Merge order: U1 → U2 → U3 → U4 → U5. Each unit deploys on its own against `main`.
+Merge order: CBS-12 → CBS-13 → CBS-14 → CBS-15 → CBS-16, each a PR into `develop`. Each unit stands on its own against `develop` (CI runs on every PR). Merging into `develop` doesn't deploy: **Release** is a `develop → main` PR after CBS-16, merged by the user, which triggers Deploy (`deploy.yml` runs only for `main`).
 
 ## Prompts
 | # | Title | Unit | Model | Effort | Depends | Group | Files |
 |---|---|---|---|---|---|---|---|
-| 01 | No-store middleware for `/api/` and `/webhooks/` | U1 | opus | high | — | A | core/middleware.py, core/tests/test_no_store.py, config/settings.py |
-| 02 | gunicorn control socket off; one IP normaliser | U1 | opus | medium | 01 | A | config/gunicorn.conf.py, core/http.py, storefront/views.py |
-| 03 | One checkout-session expiry; expire orphaned sessions | U2 | opus | high | 02 | B | payments/confirm.py, dashboard/views.py, dashboard/tests/test_schedule.py, storefront/views.py, storefront/tests/test_bookings_api.py |
-| 04 | Viewer cancels only bookings that haven't ended | U3 | opus | high | 03 | C | accounts/roles.py, accounts/tests/test_access.py, dashboard/schedule.py, dashboard/queries.py, dashboard/views.py, dashboard/tests/test_schedule.py |
-| 05 | NUL-byte 404s; viewer budget after validation | U3 | sonnet | medium | 04 | C | dashboard/schedule.py, dashboard/queries.py, dashboard/forms.py, dashboard/views.py, dashboard/tests/test_schedule.py, dashboard/tests/test_bookings.py |
-| 06 | Full pages, never bare fragments, without htmx | U3 | sonnet | high | 05 | C | dashboard/templates/dashboard/fragment_page.html, dashboard/views.py, dashboard/tests/test_schedule.py |
-| 07 | Viewer block reasons; neutral refund alert | U3 | sonnet | medium | 06 | C | dashboard/forms.py, dashboard/views.py, dashboard/templates/dashboard/overview.html, dashboard/tests/test_schedule.py, dashboard/tests/test_overview.py |
-| 08 | Drift tests, prune boundary, nightly runbook note | U4 | haiku | low | — | D | bookings/tests/test_nightly.py, turbo.json, docs/runbook.md |
-| 09 | Success and cancel URLs name the booking | U5 | opus | medium | 03 | E | storefront/views.py, storefront/tests/test_bookings_api.py |
-| 10 | Checkout cookie module; result pages pick their own session | U5 | opus | high | 09 | E | src/lib/booking/checkout-cookie.ts (+ test), app/book/success/page.tsx, app/book/cancelled/page.tsx, app/book/__tests__/result-pages.test.tsx |
-| 11 | `startCheckout` writes per-booking entries; bad-URL release; `releaseHold` by ref | U5 | opus | high | 10 | E | src/lib/booking/actions.ts, src/lib/booking/__tests__/actions.test.ts, CLAUDE.md |
+| 01 | No-store middleware for `/api/` and `/webhooks/` | CBS-12 | opus | high | — | A | core/middleware.py, core/tests/test_no_store.py, config/settings.py |
+| 02 | gunicorn control socket off; one IP normaliser | CBS-12 | opus | medium | 01 | A | config/gunicorn.conf.py, core/http.py, storefront/views.py |
+| 03 | One checkout-session expiry; expire orphaned sessions | CBS-13 | opus | high | 02 | B | payments/confirm.py, dashboard/views.py, dashboard/tests/test_schedule.py, storefront/views.py, storefront/tests/test_bookings_api.py |
+| 04 | Viewer cancels only bookings that haven't ended | CBS-14 | opus | high | 03 | C | accounts/roles.py, accounts/tests/test_access.py, dashboard/schedule.py, dashboard/queries.py, dashboard/views.py, dashboard/tests/test_schedule.py |
+| 05 | NUL-byte 404s; viewer budget after validation | CBS-14 | sonnet | medium | 04 | C | dashboard/schedule.py, dashboard/queries.py, dashboard/forms.py, dashboard/views.py, dashboard/tests/test_schedule.py, dashboard/tests/test_bookings.py |
+| 06 | Full pages, never bare fragments, without htmx | CBS-14 | sonnet | high | 05 | C | dashboard/templates/dashboard/fragment_page.html, dashboard/views.py, dashboard/tests/test_schedule.py |
+| 07 | Viewer block reasons; neutral refund alert | CBS-14 | sonnet | medium | 06 | C | dashboard/forms.py, dashboard/views.py, dashboard/templates/dashboard/overview.html, dashboard/tests/test_schedule.py, dashboard/tests/test_overview.py |
+| 08 | Drift tests, prune boundary, nightly runbook note | CBS-15 | haiku | low | — | D | bookings/tests/test_nightly.py, turbo.json, docs/runbook.md |
+| 09 | Success and cancel URLs name the booking | CBS-16 | opus | medium | 03 | E | storefront/views.py, storefront/tests/test_bookings_api.py |
+| 10 | Checkout cookie module; result pages pick their own session | CBS-16 | opus | high | 09 | E | src/lib/booking/checkout-cookie.ts (+ test), app/book/success/page.tsx, app/book/cancelled/page.tsx, app/book/__tests__/result-pages.test.tsx |
+| 11 | `startCheckout` writes per-booking entries; bad-URL release; `releaseHold` by ref | CBS-16 | opus | high | 10 | E | src/lib/booking/actions.ts, src/lib/booking/__tests__/actions.test.ts, CLAUDE.md |
 
 Paths are under `apps/backend/` for 01–09 (except `turbo.json` and `docs/runbook.md`, at the repo root) and under
 `apps/web/` for 10–11 (except `CLAUDE.md`). Prompts in one unit run in order on one branch, so no two prompts run in
@@ -225,8 +231,8 @@ cd apps/backend && uv run pytest core/tests/test_no_store.py -q && cd ../..
 # R2
 cd apps/backend && uv run python -c "import runpy; assert runpy.run_path('config/gunicorn.conf.py')['control_socket_disable'] is True" && cd ../..
 # R3 R4: no duplicates left (both print nothing)
-grep -rn --include='*.py' -e '_client_ip\b' -e 'def _normalise' apps/backend
-grep -rn --include='*.py' -e '_expire_checkout' -e '_expire_session' apps/backend
+grep -rnw --include='*.py' -e '_client_ip' -e '_normalise' apps/backend
+grep -rnw --include='*.py' -e '_expire_checkout' -e '_expire_session' apps/backend
 # R5 R16 (backend)
 cd apps/backend && uv run pytest storefront/tests/test_bookings_api.py -q && cd ../..
 # R6–R11
@@ -238,7 +244,8 @@ grep -n 'executions list' docs/runbook.md
 # R14–R16 (web)
 pnpm --filter @cb/web test
 
-# Manual, test mode, after U5 deploys (add to the pre-release run):
+# Release: after CBS-16 merges into develop, the user opens and merges a develop → main PR; Deploy runs on main.
+# Manual, test mode, after that Release deploy (add to the pre-release run):
 #   open two tabs on $WEB_URL/book, start a checkout in each (two different courts), cancel in tab A:
 #   tab A shows "No worries", tab B's PayMongo page still pays, and tab B lands on its own confirmed reference
 #   (the URL shows ?ref=<B's reference>). Every page still shows "Fictional venue · Test mode, no real payments".
@@ -246,10 +253,17 @@ pnpm --filter @cb/web test
 ```
 
 ## Rollback
-Each unit is one PR with no migration, env key or contract change, so `git revert` of its merge commit and a redeploy
-(runbook `## Roll back`) restores the previous behaviour. Reverting U5 leaves v2 cookies in visitors' browsers, which
+Each unit is one PR into `develop` with no migration, env key or contract change, so `git revert` of its merge commit
+on `develop` undoes it. If the Release has already reached `main`, revert there too (or roll back the Cloud Run
+revision, runbook `## Roll back`). Reverting CBS-16 leaves v2 cookies in visitors' browsers, which
 the old readers treat as an unknown session (`not_found`, or "released" on the cancel page) until they expire within
 a day. That's acceptable on a test-mode demo.
 
 ## Log
 - 2026-10-21: planned (triaged scope, N7 = not ended, N8 = preset reasons, two-tab = ref picks own entry, nightly lock dropped: user choices).
+- 2026-10-21: audited (BLOCK → fixed): 7 fixes applied (base → develop plus the Release step, legacy-cookie fallback, `hx-disable` wrapper, explicit save patch, constraint clarification approved, two NOTE tweaks). Status audited.
+- 2026-10-21: tickets CBS-12…CBS-16 (CBS-12 to CBS-16 = U1 to U5); the Sprint 2 block is in TASKS.md (Branch base `develop`).
+- 2026-10-21: CBS-12 build started on branch CBS-12; rollback point f5d5960e8adc725fb349f083177c9208c8633984.
+- 2026-10-21: 01 done (opus, 0 retries): NoStoreMiddleware first in MIDDLEWARE; 6 tests (4 fail without it, verified); 736 backend tests green. `docker compose` plugin missing locally, `docker-compose` used.
+- 2026-10-21: 02 done (opus, 0 retries): `control_socket_disable = True`; `core.http.normalise_ip` is the one normaliser; 736 tests, image fail-fast OK. The duplicate-check greps (prompt 02, prompt 03, End-to-end) matched `test_client_ip` as a substring; changed to whole-word `grep -rnw` (bookkeeping fix, no code impact).
+- 2026-10-21: CBS-12 PR #13 (c8092f5), CI green. Gate: CI + code-guardian, APPROVE WITH NITS, 0 Blockers. SF (no 500 test) and nits (middleware-first assert, `/api/v1` status assert, test rename, 413 → 400 wording) fixed in 531f8be; 739 backend tests. Not fixed (by design): `/api`, `/webhooks` without a trailing slash and gunicorn-level 400s get no `no-store`; they're outside `/api/v1/*` and `/webhooks/*` and carry no data. R1 wording: Django answers `RequestDataTooBig` with a 400, not a 413.

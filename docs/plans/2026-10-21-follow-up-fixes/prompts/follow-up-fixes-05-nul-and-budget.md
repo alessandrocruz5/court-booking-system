@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 05
-unit: U3
+unit: CBS-14
 status: todo
 model: sonnet
 effort: medium
@@ -61,7 +61,8 @@ files:
     each getting the form error; then one valid create succeeds ("Booking added."). Reuse the pinned-clock fixture
     the existing budget test uses (~:860-920).
   - `test_bookings.py`: `GET /dashboard/bookings/KC-%00AAAA/` (owner) → 404.
-  - Show the NUL tests fail on the old code (a `ValueError` from the test client), and the budget test too.
+  - Show the NUL tests fail on the old code (the test client re-raises the database adapter's exception, a 500), and
+    the budget test too.
 
 ## Do not
 - Touch files outside the `files` list. If you must, stop and report why.

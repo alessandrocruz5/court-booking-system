@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 09
-unit: U5
+unit: CBS-16
 status: todo
 model: opus
 effort: medium
@@ -42,7 +42,9 @@ so the web's result pages can tell which of a browser's checkouts PayMongo is re
   `f"http://localhost:3000/book/success?ref={booking.reference}"` and the cancelled equivalent. The PII loop below
   them must still pass (a reference isn't personal data).
 - No API response, fixture or `schemas.ts` change: the contract (`docs/api/fixtures`) is untouched.
-- Deploy independence: the current web pages ignore `searchParams`, so this ships safely before or after prompts 10–11.
+- Deploy independence: the current web pages ignore `searchParams`, so this is safe with the old web. With the new
+  web, Deploy rolls out `cb-backend` before `cb-web`. A checkout started in between has a `?ref=` URL and a legacy
+  cookie, and prompt 10's `pickCheckout` handles that with a legacy-entry fallback.
 
 ## Do not
 - Touch files outside the `files` list. If you must, stop and report why.

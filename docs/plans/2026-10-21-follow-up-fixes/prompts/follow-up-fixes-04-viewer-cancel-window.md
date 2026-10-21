@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 04
-unit: U3
+unit: CBS-14
 status: todo
 model: opus
 effort: high
@@ -74,6 +74,9 @@ every caller passes the request's clock.
     - Its panel (`GET booking_url`) has no "Cancel booking" button.
     - The owner can still cancel it.
 - `grep -rn 'can_cancel(' apps/backend --include='*.py'` must show `now=` at every call.
+- The autouse `pinned_clock` patches only `dashboard.views.timezone`. So any new **direct** call to
+  `queries.get_booking` or `schedule.booking_detail` in a test that asserts `can_cancel` must pass `now=NOW`.
+  Otherwise it reads the real clock, and the test starts failing after 2026-11-02.
 
 ## Do not
 - Touch files outside the `files` list. If you must, stop and report why.

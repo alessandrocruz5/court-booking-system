@@ -92,3 +92,23 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - No new tables, migrations or env keys. A cancelled pending hold has its PayMongo checkout session expired on commit via the public `get_client`.
     - Follow-ups (not scheduled): `overview.html:15` alert copy still says "payment arrived after the hold expired"; web `/book/success` copy for a staff-cancelled paid booking; `holds._expire_checkout` duplicates `confirm._expire_session`; nits N1–N8 from the first review (NUL-byte 500s, budget counted before validation, window drift test, bare fragments without htmx, viewer cancels past real bookings, block-note defacement).
     - Release: run the runbook `## Pre-release checklist` on Cloud Run before calling the MVP done.
+
+## Sprint 2 — Follow-up fixes   (planned 2026-10-21)
+Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-up-fixes]]
+
+> **Epic:** Clears the triaged follow-ups and deferred items from Sprint 1: API cache headers, duplicate helpers,
+> dashboard hardening for the public demo viewer, drift tests between linked constants, and a checkout that works
+> correctly with two tabs open. No migrations, env keys or API contract changes. Units merge into `develop`, and one
+> `develop → main` release deploys them.
+
+- [x] CBS-12 — API no-store and backend hygiene · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 01, 02 · depends: — · model: opus (merged 2026-10-21)
+  - **Story:** Sends `Cache-Control: no-store` on every `/api/` and `/webhooks/` response, turns off gunicorn's control socket, and keeps one IP normaliser.
+- [ ] CBS-13 — One checkout-session expiry, including orphaned sessions · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 03 · depends: CBS-12 · model: opus
+  - **Story:** The dashboard's cancel reuses `payments.confirm.expire_session`, and a PayMongo session created but never saved is expired.
+- [ ] CBS-14 — Dashboard hardening · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 04, 05, 06, 07 · depends: CBS-13 · model: opus
+  - **Story:** The viewer cancels only bookings that haven't ended; NUL bytes give 404s; the viewer's budget is charged after validation; no bare fragments without htmx; preset reasons for viewer blocks; the refund alert names no cause.
+- [ ] CBS-15 — Drift tests and nightly runbook note · Changed · plan: [[2026-10-21-follow-up-fixes]] prompts: 08 · depends: — · model: haiku
+  - **Story:** Tests tie the rate-limit windows to the prune age and the backend's retention days to the web's, and pin the prune boundary; the runbook adds a check before a manual nightly run.
+- [ ] CBS-16 — Checkout per-tab sessions and result copy · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 09, 10, 11 · depends: CBS-13 · model: opus
+  - **Story:** The success and cancel URLs carry `?ref=`, and the `cb_checkout` cookie holds up to 3 booking entries, so each tab's result page acts on its own booking. A bad checkout URL releases its hold, and the refund copy names no cause.
+  - **Release:** after this unit merges, open a `develop → main` PR (it deploys), then run the plan's manual test-mode checks.

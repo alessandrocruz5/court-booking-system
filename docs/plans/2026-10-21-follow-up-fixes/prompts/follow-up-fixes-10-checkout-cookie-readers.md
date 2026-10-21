@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 10
-unit: U5
+unit: CBS-16
 status: todo
 model: opus
 effort: high
@@ -55,8 +55,9 @@ cookie.
   export function parseCheckouts(value: string | undefined): CheckoutEntry[];
   /** Prepend `entry`, drop any older entry with the same reference or session, keep MAX_CHECKOUTS. */
   export function addCheckout(value: string | undefined, entry: { reference: string; sessionId: string }): string;
-  /** A well-formed `ref`: that entry's session, or undefined if the cookie has no such entry.
-   *  No or malformed `ref`: the newest entry's session (also the legacy value). */
+  /** A well-formed `ref`: that entry's session; if no entry has it, a legacy (reference-null) entry's session
+   *  if there is one (the rollout window: new backend URL, old web cookie), else undefined. Never another
+   *  referenced entry. No or malformed `ref`: the newest entry's session (also the legacy value). */
   export function pickCheckout(value: string | undefined, ref: unknown): string | undefined;
   ```
   Write a module docstring that explains the format, the bound, and why `ref` can't change a result. `.` and `|` can't
@@ -81,7 +82,8 @@ cookie.
 - Tests:
   - `src/lib/booking/__tests__/checkout-cookie.test.ts`: parse (v2, legacy, junk, empty); `addCheckout` (prepend,
     dedupe by reference and session, cap 3, from a legacy value); `pickCheckout` (matching `ref`; a valid but unknown
-    `ref` → undefined; no `ref` → newest; malformed `ref` → newest; array `ref` → newest).
+    `ref` with only referenced entries → undefined; a valid `ref` with a legacy bare cookie → the legacy session; no
+    `ref` → newest; malformed `ref` → newest; array `ref` → newest).
   - `app/book/__tests__/result-pages.test.tsx` (read it whole; it mocks `next/headers` `cookies().get("cb_checkout")`
     and renders pages with `render(page, props)`):
     - Keep every existing test. Pass `searchParams` where needed; the forged-`searchParams` test must still prove a

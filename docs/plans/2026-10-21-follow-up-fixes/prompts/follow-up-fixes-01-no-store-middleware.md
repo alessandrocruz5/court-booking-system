@@ -2,8 +2,8 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 01
-unit: U1
-status: todo
+unit: CBS-12
+status: done
 model: opus
 effort: high
 depends_on: []
@@ -20,7 +20,7 @@ files:
 
 ## Task
 Make every backend response under `/api/` or `/webhooks/` carry `Cache-Control: no-store`. That includes the
-responses no view produces: an unmatched-route 404, a 400 from `DisallowedHost`, a 413 from `RequestDataTooBig`,
+responses no view produces: an unmatched-route 404, a 400 from `DisallowedHost`, a 400 from `RequestDataTooBig`,
 and a 500. Do it with one small middleware placed **first** (outermost) in `MIDDLEWARE`.
 
 ## Context

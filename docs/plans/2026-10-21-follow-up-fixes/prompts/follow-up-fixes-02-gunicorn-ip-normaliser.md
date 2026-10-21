@@ -2,8 +2,8 @@
 type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 02
-unit: U1
-status: todo
+unit: CBS-12
+status: done
 model: opus
 effort: medium
 depends_on: [01]
@@ -57,7 +57,7 @@ docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test
 cd apps/backend && uv run python -c "import runpy; assert runpy.run_path('config/gunicorn.conf.py')['control_socket_disable'] is True"
-cd /home/apa/Code/court-booking-system && ! grep -rn --include='*.py' -e '_client_ip\b' -e '_normalise\b' apps/backend
+cd /home/apa/Code/court-booking-system && ! grep -rnw --include='*.py' -e '_client_ip' -e '_normalise' apps/backend
 docker build -t cb-backend:local apps/backend
 ```
 - The image still starts and fails fast without env, as the CI `images` job checks.
