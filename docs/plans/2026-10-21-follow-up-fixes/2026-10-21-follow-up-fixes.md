@@ -279,3 +279,9 @@ a day. That's acceptable on a test-mode demo.
 - 2026-10-21: CBS-15 build started on branch CBS-15; rollback point 27b20d859192e76919c89b4fcd737b0393e62eda.
 - 2026-10-21: 08 done (haiku, 0 retries): 3 drift/boundary tests in test_nightly.py, site.ts in Turbo test inputs, runbook check before manual nightly run; 770 backend tests.
 - 2026-10-21: CBS-15 PR #16 merged into develop. Gate: CI only.
+- 2026-10-21: CBS-16 build started on branch CBS-16; rollback point 1c0654ecfab17e355fe7e6ce8a12bbd2c57c2512.
+- 2026-10-21: 09 done (opus, 0 retries): success/cancel URLs carry ?ref=<reference>; 770 backend tests.
+- 2026-10-21: 10 done (opus, 0 retries): checkout-cookie.ts module (v2 + legacy); result pages pick own session by ?ref=; cause-neutral needs_refund copy; 170 web tests.
+- 2026-10-21: 11 done (opus, 0 retries): startCheckout writes per-booking entries (max 3); bad checkout URL releases the hold; releaseHold picks by ref; CLAUDE.md coupling updated; 176 web tests. The Done-when grep `const CHECKOUT_COOKIE` also matches the shared export in checkout-cookie.ts; verified with `^\s*const` instead (no local const).
+- 2026-10-21: CBS-16 PR #17, CI green. Gate: CI + code-guardian, APPROVE WITH NITS, 0 Blockers. Should-fix (not applied): addCheckout keeps legacy bare entries, so pickCheckout's legacy fallback also serves a stale/evicted ref until the cookie ages out (24h, same browser, idempotent release); fix would be dropping legacy entries in addCheckout. Nits: SESSION_RE looser than backend; paid/released entries stay in cookie.
+- 2026-10-21: CBS-16 PR #17 merged into develop.

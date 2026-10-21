@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 11
 unit: CBS-16
-status: todo
+status: done
 model: opus
 effort: high
 depends_on: [10]
