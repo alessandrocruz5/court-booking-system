@@ -8,7 +8,6 @@ no view here opens a transaction around a PayMongo call. Payment status comes on
 `payments.confirm`, never from the request. No response or log carries customer data (RA 10173).
 """
 
-import ipaddress
 import json
 import re
 from datetime import date
@@ -23,6 +22,7 @@ from bookings.availability import availability
 from bookings.holds import Customer, SlotTaken, create_hold, release
 from bookings.models import Booking, Court
 from bookings.rules import SPORTS, TIME_ZONE, BookingRuleError, Coverage, Sport, Status
+from core.http import normalise_ip
 from core.ratelimit import hit
 from payments.confirm import check_checkout, log_error, release_checkout
 from payments.env import PaymentsConfigError
@@ -128,23 +128,6 @@ def _is_int(value) -> bool:
     return type(value) is int
 
 
-def _client_ip(value) -> str | None:
-    """The rate-limit key for a client IP: an IPv4 address, or an IPv6 address's /64 (one
-    subscriber's usual allocation). An IPv4-mapped IPv6 address counts as its IPv4 address; a zone
-    ID (`fe80::1%eth0`) is invalid."""
-    if not isinstance(value, str) or "%" in value:
-        return None
-    try:
-        address = ipaddress.ip_address(value.strip())
-    except ValueError:
-        return None
-    if isinstance(address, ipaddress.IPv6Address):
-        if address.ipv4_mapped is None:
-            return str(ipaddress.ip_network(f"{address}/64", strict=False))
-        address = address.ipv4_mapped
-    return str(address)
-
-
 def _text(value) -> str | None:
     """A trimmed string, or None. Postgres rejects NUL in text, so a NUL is invalid input rather
     than a database error."""
@@ -233,7 +216,7 @@ def create_booking(request):
     name = _name(customer.get("name"))
     email = _email(customer.get("email"))
     mobile = _mobile(customer.get("mobile"))
-    client_ip = _client_ip(body.get("client_ip"))
+    client_ip = normalise_ip(body.get("client_ip"))
 
     court = None
     if _text(court_code):
@@ -374,7 +357,7 @@ def booking_lookup(request):
 
     reference = _text(body.get("reference"))
     email = _text(body.get("email"))
-    client_ip = _client_ip(body.get("client_ip"))
+    client_ip = normalise_ip(body.get("client_ip"))
     fields = []
     if not reference:
         fields.append("reference")
