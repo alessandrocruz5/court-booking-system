@@ -24,7 +24,7 @@ from bookings.models import Booking, Court
 from bookings.rules import SPORTS, TIME_ZONE, BookingRuleError, Coverage, Sport, Status
 from core.http import normalise_ip
 from core.ratelimit import hit
-from payments.confirm import check_checkout, log_error, release_checkout
+from payments.confirm import check_checkout, expire_session, log_error, release_checkout
 from payments.env import PaymentsConfigError
 from payments.paymongo import PayMongoError, get_client
 
@@ -270,6 +270,7 @@ def create_booking(request):
         return json_response({"error": error.code}, status=400)
 
     # Outside any transaction: the hold has committed. Any failure from here frees the slot.
+    session = None
     try:
         with get_client() as client:
             session = client.create_checkout_session(
@@ -285,10 +286,18 @@ def create_booking(request):
     except (PayMongoError, PaymentsConfigError) as error:
         log_error("booking.checkout_failed", error, ref=booking.reference)
         _release_failed_hold(booking)
+        if session is not None:
+            # Created, but its ID wasn't saved: nobody can reach it, and it could still take
+            # a payment.
+            expire_session(session.id)
         return json_response({"error": "payments_unavailable"}, status=503)
     except Exception as error:
         log_error("booking.checkout_failed", error, ref=booking.reference)
         _release_failed_hold(booking)
+        if session is not None:
+            # Created, but its ID wasn't saved: nobody can reach it, and it could still take
+            # a payment.
+            expire_session(session.id)
         raise
 
     return json_response(

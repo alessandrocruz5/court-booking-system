@@ -199,9 +199,10 @@ def check_checkout(checkout_session_id: str | None) -> CheckResult:
     return CheckResult(result.status, result.booking)
 
 
-def _expire_session(checkout_session_id: str) -> None:
-    """Best effort: a session left open could still take a payment, which would then need a
-    refund. A failure is logged; the booking is released either way."""
+def expire_session(checkout_session_id: str) -> None:
+    """Best effort: a checkout session left open could still take a payment, which would then
+    need a refund. Call it outside any transaction, directly or through `on_commit`. It never
+    raises: a failure is logged with the session ID only."""
     try:
         with get_client() as client:
             client.expire_checkout_session(checkout_session_id)
@@ -228,5 +229,5 @@ def release_checkout(checkout_session_id: str | None) -> str:
             if locked.status == Status.PENDING:
                 release(locked, status=Status.CANCELLED)
             # The HTTP call runs after the commit, outside the transaction.
-            transaction.on_commit(partial(_expire_session, checkout_session_id))
+            transaction.on_commit(partial(expire_session, checkout_session_id))
     return "released"

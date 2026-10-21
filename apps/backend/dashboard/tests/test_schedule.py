@@ -16,6 +16,7 @@ from bookings.rules import Source, Status
 from core import ratelimit
 from dashboard import forms, queries, schedule, views
 from dashboard.schedule import build_grid
+from payments import confirm
 from payments.confirm import confirm_payment
 from payments.paymongo import CheckoutSession, Payment, PayMongoError
 
@@ -135,9 +136,10 @@ def paid_session(booking: Booking) -> CheckoutSession:
 
 
 def mock_client(monkeypatch) -> MagicMock:
-    """Replace the views' `get_client` with a mock usable as `with get_client() as client:`."""
+    """Replace `payments.confirm.get_client`, which `expire_session` calls, with a mock usable as
+    `with get_client() as client:`."""
     factory = MagicMock(name="get_client")
-    monkeypatch.setattr(views, "get_client", factory)
+    monkeypatch.setattr(confirm, "get_client", factory)
     return factory.return_value.__enter__.return_value
 
 

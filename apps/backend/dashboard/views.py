@@ -24,8 +24,7 @@ from bookings import holds
 from bookings.rules import TIME_ZONE, BookingRuleError, Status, local_today
 from core.http import client_ip
 from core.ratelimit import hit
-from payments.confirm import log_error
-from payments.paymongo import get_client
+from payments.confirm import expire_session
 
 from . import queries, schedule
 from .forms import RULE_ERROR_DEFAULT, RULE_ERRORS, SLOT_TAKEN, StaffBookingForm
@@ -174,17 +173,6 @@ def booking_panel(request, reference):
     return render(request, f"{SCHEDULE}#panel", {"detail": detail})
 
 
-def _expire_checkout(checkout_session_id: str) -> None:
-    """Best effort, once a staff cancel of a pending online hold has committed: its checkout
-    session left open could still take a payment, which would then need a refund. A failure is
-    logged with the session ID only; it never raises."""
-    try:
-        with get_client() as client:
-            client.expire_checkout_session(checkout_session_id)
-    except Exception as error:
-        log_error("payment.expire_failed", error, session=checkout_session_id)
-
-
 @staff_required
 @require_POST
 def cancel_view(request, reference):
@@ -201,7 +189,7 @@ def cancel_view(request, reference):
     status = holds.cancel_booking(booking, by_role=role, now=now)
     if status == Status.CANCELLED and was_pending and booking.checkout_session_id:
         # The HTTP call runs after the cancel commits, outside any transaction.
-        transaction.on_commit(partial(_expire_checkout, booking.checkout_session_id))
+        transaction.on_commit(partial(expire_session, booking.checkout_session_id))
     if request.POST.get("return") == "detail":
         return _to_detail(request, reference)
     day = booking.starts_at.astimezone(TIME_ZONE).date()
