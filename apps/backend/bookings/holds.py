@@ -268,6 +268,38 @@ def release(booking: Booking, *, status: str, now: datetime | None = None) -> bo
     return True
 
 
+def refunds_on_cancel(booking: Booking) -> bool:
+    """Whether a staff cancel of `booking` ends in `needs_refund`: an online booking with its
+    payment recorded, and not demo seed data, whose `pay_demo_…` payment never reached PayMongo."""
+    return booking.source == Source.ONLINE and bool(booking.payment_id) and not booking.is_demo
+
+
+def cancel_booking(booking: Booking, *, by_role: str, now: datetime | None = None) -> str | None:
+    """Cancel `booking` for a staff member, freeing its slots. The caller has already checked
+    `accounts.roles.can_cancel`; this makes that call site explicit.
+
+    The booking is judged on its row locked here, not on the caller's copy, so a hold the webhook
+    confirms meanwhile is seen as paid. A paid online booking (its payment recorded by
+    `payments.confirm`) is released as `needs_refund`, stamped as cancelled: final for
+    `confirm_payment` and counted by the overview's refund alert, whereas `cancelled` would let a
+    later confirmation of the same session flip it silently. A demo booking's payment is seed
+    data with no checkout session, so it is just cancelled. Returns the status set, or None when
+    the booking was already final. The log carries the reference, the role and the status only."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        locked = Booking.objects.select_for_update().get(pk=booking.pk)
+        status = Status.NEEDS_REFUND if refunds_on_cancel(locked) else Status.CANCELLED
+        if not release(locked, status=status, now=now):
+            return None
+        if status == Status.NEEDS_REFUND:
+            locked.cancelled_at = now
+            locked.save(update_fields=["cancelled_at", "updated_at"])
+    booking.status = locked.status
+    booking.cancelled_at = locked.cancelled_at
+    logger.info("booking.cancelled ref=%s role=%s status=%s", booking.reference, by_role, status)
+    return status
+
+
 def expire_stale_holds(*, now: datetime | None = None) -> int:
     """Expire every pending booking whose hold has lapsed and free its slots. Returns the count."""
     now = now or timezone.now()

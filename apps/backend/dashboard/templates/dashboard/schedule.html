@@ -1,0 +1,150 @@
+{% extends "dashboard/base.html" %}
+{% comment %}
+The schedule: a day grid of every court by hour, a booking side panel and the add form.
+
+Every value arrives from `dashboard.schedule`, already masked for the viewer's role, and every
+permission (`can_cancel`, `addable`) was decided on the server: the template only reflects it.
+Partials, rendered alone for htmx as `dashboard/schedule.html#<name>`:
+  grid   the date nav and the table (swapped into #grid), plus out-of-band toast and panel reset
+  panel  a booking's details, or a refusal message (swapped into #panel)
+  form   the walk-in / block form (swapped into #panel)
+No inline scripts, no hx-on, no inline styles: colours and the sticky column are CSS classes.
+{% endcomment %}
+{% block dashboard_title %}Schedule{% endblock %}
+
+{% block dashboard_content %}
+  <h1>Schedule</h1>
+
+  <ul class="legend" aria-label="Legend">
+    <li><span class="swatch slot-online" aria-hidden="true"></span>Online</li>
+    <li><span class="swatch slot-walkin" aria-hidden="true"></span>Walk-in</li>
+    <li><span class="swatch slot-block" aria-hidden="true"></span>Block</li>
+    <li><span class="swatch slot-online slot-pending" aria-hidden="true"></span>Payment pending</li>
+    <li><span class="swatch slot-free" aria-hidden="true"></span>Free</li>
+    <li><span class="swatch slot-past" aria-hidden="true"></span>Past</li>
+  </ul>
+
+  <div class="schedule-layout">
+    <div id="grid" class="stack-sm">
+      {% partialdef grid inline %}
+        <div class="schedule-nav">
+          <h2 id="schedule-day">{{ grid.day|date:"l j F Y" }}{% if grid.is_today %} <span class="note">· Today</span>{% endif %}</h2>
+          <nav class="day-nav" aria-label="Choose a day">
+            {% url 'dashboard:schedule' as schedule_url %}
+            {% if grid.prev_day %}
+              <a class="btn btn-outline btn-sm" href="{{ schedule_url }}?date={{ grid.prev_day|date:'Y-m-d' }}" hx-get="{{ schedule_url }}?date={{ grid.prev_day|date:'Y-m-d' }}" hx-target="#grid" hx-push-url="true" aria-label="Previous day">‹ Prev</a>
+            {% endif %}
+            <a class="btn btn-outline btn-sm" href="{{ schedule_url }}?date={{ grid.today|date:'Y-m-d' }}" hx-get="{{ schedule_url }}?date={{ grid.today|date:'Y-m-d' }}" hx-target="#grid" hx-push-url="true"{% if grid.is_today %} aria-current="date"{% endif %}>Today</a>
+            {% if grid.next_day %}
+              <a class="btn btn-outline btn-sm" href="{{ schedule_url }}?date={{ grid.next_day|date:'Y-m-d' }}" hx-get="{{ schedule_url }}?date={{ grid.next_day|date:'Y-m-d' }}" hx-target="#grid" hx-push-url="true" aria-label="Next day">Next ›</a>
+            {% endif %}
+            <form class="date-jump" method="get" action="{{ schedule_url }}" hx-get="{{ schedule_url }}" hx-target="#grid" hx-push-url="true">
+              <label for="schedule-date" class="visually-hidden">Date</label>
+              <input id="schedule-date" type="date" name="date" value="{{ grid.day|date:'Y-m-d' }}" min="{{ grid.min_day|date:'Y-m-d' }}" max="{{ grid.max_day|date:'Y-m-d' }}">
+              <button type="submit" class="btn btn-primary btn-sm">Go</button>
+            </form>
+          </nav>
+        </div>
+
+        <div class="table-scroll schedule-scroll">
+          <table class="schedule" aria-labelledby="schedule-day">
+            <thead>
+              <tr>
+                <th scope="col" class="court-col">Court</th>
+                {% for hour in grid.hours %}
+                  <th scope="col">{{ hour }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in grid.rows %}
+                <tr>
+                  <th scope="row" class="court-col">{{ row.label }}</th>
+                  {% for cell in row.cells %}
+                    {% if cell.reference %}
+                      <td class="{{ cell.css }}"{% if cell.colspan > 1 %} colspan="{{ cell.colspan }}"{% endif %}>
+                        <button type="button" class="slot-btn" hx-get="{% url 'dashboard:booking' cell.reference %}" hx-target="#panel" aria-label="{{ cell.label }}">{{ cell.text }}</button>
+                      </td>
+                    {% elif cell.addable %}
+                      <td class="{{ cell.css }}">
+                        <button type="button" class="slot-btn" hx-get="{% url 'dashboard:new' %}?court={{ row.court_code }}&amp;space={{ row.space }}&amp;hour={{ cell.hour }}&amp;date={{ grid.day|date:'Y-m-d' }}" hx-target="#panel" aria-label="{{ cell.label }}"><span aria-hidden="true">+</span></button>
+                      </td>
+                    {% else %}
+                      <td class="{{ cell.css }}"></td>
+                    {% endif %}
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if toast %}
+          <div id="toast" class="toast" role="status" aria-live="polite" hx-swap-oob="true">{{ toast }}</div>
+          <aside id="panel" class="panel" aria-live="polite" aria-label="Booking" hx-swap-oob="true"></aside>
+        {% endif %}
+      {% endpartialdef %}
+    </div>
+
+    <aside id="panel" class="panel" aria-live="polite" aria-label="Booking"></aside>
+  </div>
+{% endblock %}
+
+{% partialdef panel %}
+  {% if message %}
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  {% elif detail %}
+    <div class="stack-sm">
+      <h2>Booking {{ detail.reference }}</h2>
+      <dl class="details">
+        <div><dt>Court</dt><dd>{{ detail.court }}{% if detail.coverage != "Full court" %} · {{ detail.coverage }}{% endif %}</dd></div>
+        <div><dt>When</dt><dd>{{ detail.when }}</dd></div>
+        {% if detail.sport %}<div><dt>Sport</dt><dd>{{ detail.sport }}</dd></div>{% endif %}
+        <div><dt>Type</dt><dd>{{ detail.source }}{% if detail.is_demo %} · demo data{% endif %}</dd></div>
+        <div><dt>Status</dt><dd>{{ detail.status }}</dd></div>
+        {% if detail.name %}<div><dt>Customer</dt><dd>{{ detail.name }}</dd></div>{% endif %}
+        {% if detail.email %}<div><dt>Email</dt><dd>{{ detail.email }}</dd></div>{% endif %}
+        {% if detail.mobile %}<div><dt>Mobile</dt><dd>{{ detail.mobile }}</dd></div>{% endif %}
+        {% if detail.sport %}<div><dt>Price</dt><dd>{{ detail.price }}{% if detail.payment_method %} · {{ detail.payment_method }}{% endif %}</dd></div>{% endif %}
+        {% if detail.note %}<div><dt>Note</dt><dd>{{ detail.note }}</dd></div>{% endif %}
+      </dl>
+      {% if detail.can_cancel %}
+        {% if detail.refund_note %}<p class="note">Refund it in the PayMongo dashboard (test mode).</p>{% endif %}
+        <button type="button" class="btn btn-accent btn-sm" hx-post="{% url 'dashboard:cancel' detail.reference %}" hx-target="#grid" hx-confirm="Cancel booking {{ detail.reference }}? Its slots become free.">Cancel booking</button>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endpartialdef %}
+
+{% partialdef form %}
+  <form id="staff-booking-form" class="stack-sm" method="post" action="{% url 'dashboard:new' %}" hx-post="{% url 'dashboard:new' %}" hx-target="#grid" novalidate>
+    <h2>Add to {{ form.court_obj.name|default:"the schedule" }}</h2>
+    {% csrf_token %}
+    {{ form.court }}
+    {{ form.date }}
+    {% if form.non_field_errors or form.court.errors or form.date.errors %}
+      <div class="alert alert-error" role="alert">
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+        {% for error in form.date.errors %}<p>{{ error }}</p>{% endfor %}
+        {% for error in form.court.errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+    <fieldset class="field kind-field">
+      <legend>Type</legend>
+      {{ form.kind }}
+      {% for error in form.kind.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+      <p class="note">A block (maintenance, an event) takes the whole court and needs a note.</p>
+    </fieldset>
+    {% for field in form %}
+      {% if field.name != "kind" and field.name != "court" and field.name != "date" %}
+        {% if form.is_basketball or field.name != "coverage" and field.name != "half" %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+{% endpartialdef %}
