@@ -219,12 +219,26 @@ class TestSearch:
         assert listed(viewer, q=MOBILE) == []
         assert listed(viewer, q="1234567") == []
 
-    def test_viewer_finds_by_name_and_reference(self, viewer):
-        make()
+    def test_viewer_finds_a_demo_booking_by_name_and_reference(self, viewer):
+        make(is_demo=True)
 
         assert listed(viewer, q="Juan") == ["KC-T00001"]
         assert listed(viewer, q="dela cruz") == ["KC-T00001"]
         assert listed(viewer, q="KC-T00001") == ["KC-T00001"]
+
+    def test_viewer_cannot_find_a_real_customer_by_name(self, viewer):
+        make()
+        make("KC-T00002", customer_name="Ana Reyes", is_demo=True, hour=15)
+
+        assert listed(viewer, q=NAME) == []
+        assert listed(viewer, q="dela cruz") == []
+        assert listed(viewer, q="Ana Reyes") == ["KC-T00002"]
+        assert listed(viewer, q="KC-T00001") == ["KC-T00001"]  # The reference still finds it.
+
+    def test_owner_finds_a_real_customer_by_name(self, owner):
+        make()
+
+        assert listed(owner, q=NAME) == ["KC-T00001"]
 
     def test_no_match_says_so(self, owner):
         html = owner.get(URL, {"q": "nobody"}).content.decode()
@@ -482,7 +496,7 @@ class TestHtmx:
         assert "<html" in html
 
     def test_partial_is_masked_for_the_viewer(self, viewer):
-        make()
+        make(is_demo=True)
 
         html = viewer.get(URL, {"q": "juan"}, headers=HX).content.decode()
 
@@ -606,12 +620,20 @@ class TestDetail:
         assert "Refund it in the PayMongo dashboard" in html
         assert "Cancel booking" not in html  # It can no longer be cancelled.
 
+    def test_needs_refund_callout_after_a_staff_cancel(self, owner):
+        make(status=Status.NEEDS_REFUND, payment_id="pay_test1", paid_at=NOW, cancelled_at=NOW)
+
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        assert "This booking was paid, then cancelled by staff" in html
+        assert "after its hold expired" not in html
+
     def test_no_callout_for_a_confirmed_booking(self, owner):
         make()
 
-        assert (
-            "Refund it in the PayMongo" not in owner.get(detail_url("KC-T00001")).content.decode()
-        )
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        assert "alert-error" not in html and "This booking was paid" not in html
 
     def test_anonymized_booking_shows_the_note_and_no_contact_details(self, owner):
         make(
@@ -678,6 +700,27 @@ class TestCancelButton:
         booking = online()
 
         assert "Cancel booking" in owner.get(detail_url(booking.reference)).content.decode()
+
+    def test_the_owner_sees_the_refund_note_on_a_confirmed_online_booking(self, owner):
+        booking = online()
+
+        html = owner.get(detail_url(booking.reference)).content.decode()
+
+        assert '<p class="note">Refund it in the PayMongo dashboard (test mode).</p>' in html
+        assert queries.get_booking(role=Role.OWNER, reference=booking.reference).refund_note
+
+    def test_the_viewer_never_sees_the_refund_note(self, viewer):
+        for booking in (online(), online("mp-03", is_demo=True)):
+            html = viewer.get(detail_url(booking.reference)).content.decode()
+            detail = queries.get_booking(role=Role.VIEWER, reference=booking.reference)
+            assert "PayMongo" not in html and not detail.refund_note
+
+    def test_no_refund_note_on_a_walk_in(self, owner):
+        booking = walk_in()
+
+        html = owner.get(detail_url(booking.reference)).content.decode()
+
+        assert "Cancel booking" in html and "PayMongo" not in html
 
     def test_absent_once_cancelled(self, owner):
         booking = walk_in()

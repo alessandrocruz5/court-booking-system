@@ -2,6 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from django.contrib.auth.models import Group, User
@@ -15,6 +16,8 @@ from bookings.rules import Source, Status
 from core import ratelimit
 from dashboard import forms, queries, schedule, views
 from dashboard.schedule import build_grid
+from payments.confirm import confirm_payment
+from payments.paymongo import CheckoutSession, Payment, PayMongoError
 
 URL = "/dashboard/schedule/"
 NEW = "/dashboard/schedule/new/"
@@ -24,6 +27,7 @@ NOW = datetime(2026, 11, 2, 12, tzinfo=rules.TIME_ZONE)
 TODAY = NOW.date()
 # Inside one 10-minute rate-limit window (04:00-04:09 UTC).
 RATE_NOW = datetime(2026, 11, 2, 4, 1, tzinfo=UTC)
+SESSION_ID = "cs_test_dash1"
 
 
 def booking_url(reference: str) -> str:
@@ -82,6 +86,55 @@ def online(code="mp-01", day=TODAY, hour=14, *, is_demo=False, confirm=True) -> 
     Booking.objects.filter(pk=booking.pk).update(**fields)
     booking.refresh_from_db()
     return booking
+
+
+def checkout_hold(code="mp-04", hour=14) -> Booking:
+    """A live online payment hold with a PayMongo checkout session, made ten minutes ago."""
+    booking = holds.create_hold(
+        court=court(code),
+        sport="badminton",
+        coverage="full",
+        day=TODAY,
+        start_hour=hour,
+        hours=1,
+        customer=Customer(
+            name="Maria Santos", email="maria.santos@example.com", mobile="+639000000001"
+        ),
+        now=NOW - timedelta(minutes=10),
+    )
+    Booking.objects.filter(pk=booking.pk).update(checkout_session_id=SESSION_ID)
+    booking.refresh_from_db()
+    return booking
+
+
+def paid_session(booking: Booking) -> CheckoutSession:
+    """The hold's checkout session as PayMongo returns it once paid, within the hold."""
+    payment = Payment(
+        id="pay_test1",
+        status="paid",
+        amount_centavos=booking.price_centavos,
+        currency="PHP",
+        fee_centavos=1_250,
+        net_centavos=booking.price_centavos - 1_250,
+        method="gcash",
+        paid_at=NOW - timedelta(minutes=5),
+        livemode=False,
+    )
+    return CheckoutSession(
+        id=SESSION_ID,
+        checkout_url=f"https://checkout.paymongo.com/{SESSION_ID}",
+        status="active",
+        livemode=False,
+        metadata={"booking_id": str(booking.id)},
+        payments=(payment,),
+    )
+
+
+def mock_client(monkeypatch) -> MagicMock:
+    """Replace the views' `get_client` with a mock usable as `with get_client() as client:`."""
+    factory = MagicMock(name="get_client")
+    monkeypatch.setattr(views, "get_client", factory)
+    return factory.return_value.__enter__.return_value
 
 
 def form_data(**overrides):
@@ -473,6 +526,99 @@ class TestCancel:
         assert f"booking.cancelled ref={booking.reference} role=owner" in caplog.text
         assert "Maria" not in caplog.text and "maria" not in caplog.text
 
+    def test_owner_cancelling_a_paid_online_booking_leaves_it_needing_a_refund(self, owner):
+        booking = checkout_hold()
+        assert confirm_payment(paid_session(booking), now=NOW).status == Status.CONFIRMED
+
+        response = owner.post(cancel_url(booking.reference), headers=HX)
+
+        assert response.status_code == 200
+        assert (
+            "Booking cancelled. It was paid: refund it in the PayMongo dashboard (test mode)."
+            in response.content.decode()
+        )
+        booking.refresh_from_db()
+        assert booking.status == Status.NEEDS_REFUND and booking.cancelled_at == NOW
+        assert booking.payment_id == "pay_test1"
+        assert not SlotLock.objects.filter(booking=booking).exists()
+        assert queries.overview(role=Role.OWNER, now=NOW).alerts.needs_refund == 1
+        # A webhook redelivery or a revisit of the success page changes nothing.
+        updated_at = booking.updated_at
+        result = confirm_payment(paid_session(booking), now=NOW)
+        booking.refresh_from_db()
+        assert result.status == Status.NEEDS_REFUND
+        assert booking.status == Status.NEEDS_REFUND and booking.updated_at == updated_at
+
+    def test_cancelling_a_pending_hold_expires_its_checkout_session_after_commit(
+        self, owner, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        client = mock_client(monkeypatch)
+        booking = checkout_hold()
+
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            response = owner.post(cancel_url(booking.reference), headers=HX)
+            client.expire_checkout_session.assert_not_called()
+
+        assert response.status_code == 200
+        assert "Booking cancelled.</div>" in response.content.decode()
+        assert len(callbacks) == 1
+        client.expire_checkout_session.assert_called_once_with(SESSION_ID)
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED
+        assert not SlotLock.objects.filter(booking=booking).exists()
+
+    def test_a_failed_expiry_is_logged_and_never_raised(
+        self, owner, monkeypatch, django_capture_on_commit_callbacks, caplog
+    ):
+        client = mock_client(monkeypatch)
+        client.expire_checkout_session.side_effect = PayMongoError("failed", status=500)
+        booking = checkout_hold()
+
+        with (
+            caplog.at_level(logging.ERROR, logger="cb.payments"),
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            response = owner.post(cancel_url(booking.reference), {"return": "detail"})
+
+        assert response.status_code == 303
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED
+        assert f"payment.expire_failed session={SESSION_ID}" in caplog.text
+        assert "Maria" not in caplog.text and "maria" not in caplog.text
+
+    def test_a_confirmed_booking_has_no_session_to_expire(
+        self, owner, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        client = mock_client(monkeypatch)
+        booking = checkout_hold()
+        confirm_payment(paid_session(booking), now=NOW)
+
+        with django_capture_on_commit_callbacks(execute=True) as callbacks:
+            owner.post(cancel_url(booking.reference), headers=HX)
+
+        assert callbacks == []
+        client.expire_checkout_session.assert_not_called()
+
+    def test_an_unpaid_walk_in_is_just_cancelled(self, owner):
+        booking = walk_in()
+
+        response = owner.post(cancel_url(booking.reference), headers=HX)
+
+        assert "Booking cancelled.</div>" in response.content.decode()
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED and booking.cancelled_at == NOW
+
+    def test_a_demo_online_booking_is_just_cancelled(self, viewer):
+        # Seeded demo payments are fictional (`pay_demo_…`) and have no checkout session.
+        booking = online(is_demo=True)
+        Booking.objects.filter(pk=booking.pk).update(payment_id="pay_demo_0001")
+
+        response = viewer.post(cancel_url(booking.reference), headers=HX)
+
+        assert "Booking cancelled.</div>" in response.content.decode()
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED
+
     def test_cancelling_twice_is_refused(self, owner):
         booking = walk_in()
         owner.post(cancel_url(booking.reference))
@@ -487,12 +633,23 @@ def test_cancel_booking_wraps_release(db, caplog):
     booking = walk_in()
 
     with caplog.at_level(logging.INFO, logger="cb.bookings"):
-        assert holds.cancel_booking(booking, by_role=Role.VIEWER, now=NOW) is True
-        assert holds.cancel_booking(booking, by_role=Role.VIEWER, now=NOW) is False
+        assert holds.cancel_booking(booking, by_role=Role.VIEWER, now=NOW) == Status.CANCELLED
+        assert holds.cancel_booking(booking, by_role=Role.VIEWER, now=NOW) is None
 
     assert booking.status == Status.CANCELLED
     assert caplog.text.count("booking.cancelled") == 1
-    assert f"booking.cancelled ref={booking.reference} role=viewer" in caplog.text
+    assert f"booking.cancelled ref={booking.reference} role=viewer status=cancelled" in caplog.text
+
+
+def test_cancel_booking_judges_the_locked_row(db):
+    """A hold confirmed after the caller read it is cancelled as paid, not as a plain hold."""
+    booking = checkout_hold()
+    stale = Booking.objects.get(pk=booking.pk)
+    confirm_payment(paid_session(booking), now=NOW)
+
+    assert stale.status == Status.PENDING
+    assert holds.cancel_booking(stale, by_role=Role.OWNER, now=NOW) == Status.NEEDS_REFUND
+    assert (stale.status, stale.cancelled_at) == (Status.NEEDS_REFUND, NOW)
 
 
 # --- create -------------------------------------------------------------------------------------
@@ -693,6 +850,72 @@ class TestWriteLimit:
             assert owner.post(NEW, form_data(**next(cells))).status_code == 200
 
         assert Booking.objects.count() == 21
+
+
+@pytest.mark.django_db
+class TestDemoLiveCap:
+    TOMORROW = TODAY + timedelta(days=1)
+
+    def _viewer_bookings(self, count: int) -> None:
+        """`count` live demo walk-ins made by the viewer, straight through `bookings.holds`."""
+        user = make_user(Role.VIEWER)
+        cells = [(f"mp-{n:02d}", hour) for n in range(1, 13) for hour in range(7, 12)]
+        for code, hour in cells[:count]:
+            holds.create_staff_booking(
+                source=Source.WALK_IN,
+                court=court(code),
+                sport="badminton",
+                coverage="full",
+                half=None,
+                day=self.TOMORROW,
+                start_hour=hour,
+                hours=1,
+                created_by=user,
+                is_demo=True,
+                now=NOW,
+            )
+
+    def test_the_viewers_create_past_the_cap_is_refused(self, viewer):
+        self._viewer_bookings(views.DEMO_LIVE_CAP)
+
+        response = viewer.post(NEW, form_data(), headers=HX)
+
+        assert response.status_code == 429
+        assert "Demo limit reached. Try again in a few minutes." in response.content.decode()
+        assert response["HX-Retarget"] == "#panel"
+        assert Booking.objects.count() == views.DEMO_LIVE_CAP
+
+    def test_the_owner_is_never_capped(self, owner):
+        self._viewer_bookings(views.DEMO_LIVE_CAP)
+
+        assert "Booking added." in owner.post(NEW, form_data(), headers=HX).content.decode()
+        assert Booking.objects.count() == views.DEMO_LIVE_CAP + 1
+
+    def test_past_and_cancelled_bookings_do_not_count(self, viewer):
+        self._viewer_bookings(views.DEMO_LIVE_CAP - 1)
+        user = make_user(Role.VIEWER)
+        ended = holds.create_staff_booking(
+            source=Source.WALK_IN,
+            court=court("tn-1"),
+            sport="tennis",
+            coverage="full",
+            half=None,
+            day=TODAY,
+            start_hour=9,
+            hours=1,
+            created_by=user,
+            is_demo=True,
+            now=NOW - timedelta(days=1),
+        )
+        cancelled = walk_in("mp-12", is_demo=True)
+        Booking.objects.filter(pk=cancelled.pk).update(created_by=user)
+        holds.cancel_booking(cancelled, by_role=Role.VIEWER, now=NOW)
+        assert ended.ends_at <= NOW
+        assert schedule.viewer_live_bookings(user, NOW) == views.DEMO_LIVE_CAP - 1
+
+        assert "Booking added." in viewer.post(NEW, form_data(), headers=HX).content.decode()
+        assert schedule.viewer_live_bookings(user, NOW) == views.DEMO_LIVE_CAP
+        assert viewer.post(NEW, form_data(court="mp-02"), headers=HX).status_code == 429
 
 
 def test_viewer_days_ahead_is_the_storefront_window():

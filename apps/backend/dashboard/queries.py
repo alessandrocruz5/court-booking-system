@@ -508,6 +508,7 @@ class BookingDetail:
     cancelled_at: str
     anonymized: bool
     can_cancel: bool
+    refund_note: bool  # The owner cancelling a paid online booking refunds it in PayMongo.
 
     @property
     def needs_refund(self) -> bool:
@@ -565,12 +566,18 @@ def _row(role: Role | None, booking: Booking) -> BookingRow:
 
 
 def _search(role: Role | None, text: str) -> Q:
-    """What a search term matches. The viewer's search covers reference and name only, so it can
-    never be used to confirm that an email or mobile number belongs to a customer."""
-    match = Q(reference__icontains=text) | Q(customer_name__icontains=text)
+    """What a search term matches. The owner searches reference, name, email and mobile. A role
+    that can't see personal data searches references, and names on demo bookings only, so the
+    public viewer can never use it to confirm that a name, email or mobile number belongs to a
+    real customer."""
     if can_see_personal_data(role):
-        match |= Q(customer_email__icontains=text) | Q(customer_mobile__icontains=text)
-    return match
+        return (
+            Q(reference__icontains=text)
+            | Q(customer_name__icontains=text)
+            | Q(customer_email__icontains=text)
+            | Q(customer_mobile__icontains=text)
+        )
+    return Q(reference__icontains=text) | Q(customer_name__icontains=text, is_demo=True)
 
 
 def list_bookings(*, role: Role | None, params: ListParams) -> Page:
@@ -612,6 +619,7 @@ def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
     # A walk-in's note is free text a staff member typed, so only the owner sees it; a block's
     # note is its reason (maintenance, an event) and is shown to everyone.
     show_note = booking.source == Source.BLOCK or can_see_personal_data(role)
+    cancellable = can_cancel(role, booking)
     return BookingDetail(
         reference=booking.reference,
         court=booking.court.name,
@@ -637,5 +645,11 @@ def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
         created_at=_stamp(booking.created_at),
         cancelled_at=_stamp(booking.cancelled_at),
         anonymized=booking.anonymized_at is not None,
-        can_cancel=can_cancel(role, booking),
+        can_cancel=cancellable,
+        refund_note=(
+            cancellable
+            and role == Role.OWNER
+            and booking.source == Source.ONLINE
+            and booking.status == Status.CONFIRMED
+        ),
     )

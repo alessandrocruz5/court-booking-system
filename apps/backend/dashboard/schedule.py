@@ -229,6 +229,14 @@ def get_booking(reference: str) -> Booking | None:
     return Booking.objects.select_related("court").filter(reference=reference).first()
 
 
+def viewer_live_bookings(user, now: datetime) -> int:
+    """How many confirmed demo bookings `user` made that haven't ended yet: the demo viewer's
+    quota. A count, not a slot check: slots are only ever claimed through `bookings.holds`."""
+    return Booking.objects.filter(
+        created_by=user, is_demo=True, status=Status.CONFIRMED, ends_at__gt=now
+    ).count()
+
+
 def _clock(moment: datetime) -> str:
     return moment.astimezone(TIME_ZONE).strftime("%I:%M %p").lstrip("0")
 
