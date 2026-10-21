@@ -270,3 +270,9 @@ a day. That's acceptable on a test-mode demo.
 - 2026-10-21: CBS-13 build started on branch CBS-13; rollback point 4d50462c7cc8ffcdcb02bb7f578025827509d7cd.
 - 2026-10-21: 03 done (opus, 0 retries): `payments.confirm.expire_session` is public and used by the dashboard cancel; an orphaned checkout session is expired in `create_booking`; 741 backend tests.
 - 2026-10-21: CBS-13 PR #14 merged into develop. Gate: CI + code-guardian, APPROVE WITH NITS, 0 Blockers.
+- 2026-10-21: CBS-14 build started on branch CBS-14; rollback point 43bcac1b4ede6a8ac318a719baeb3df860470a8c.
+- 2026-10-21: 04 done (opus, 0 retries): viewer cancels only bookings with ends_at > now; `can_cancel(..., *, now)`; 749 backend tests. Renamed test_can_cancel → test_cancel_permissions so the Done-when grep is clean.
+- 2026-10-21: 05 done (sonnet, 0 retries): NUL → 404 in both get_booking and for_cell; viewer budget charged after form validation; 753 backend tests.
+- 2026-10-21: 06 done (sonnet, 0 retries): non-htmx fragments redirect or render fragment_page.html (hx-disable); existing fragment tests now send HX; 761 backend tests.
+- 2026-10-21: 07 done (sonnet, 0 retries): forms.BLOCK_REASONS + preset_notes for the viewer; cause-neutral refund alert; 767 backend tests.
+- 2026-10-21: CBS-14 PR #15 merged into develop. Gate: CI + code-guardian, APPROVE WITH NITS, 0 Blockers (nits: preset note applies to viewer walk-ins too; non-htmx bad-court add form is a 302).

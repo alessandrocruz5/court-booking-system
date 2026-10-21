@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 06
 unit: CBS-14
-status: todo
+status: done
 model: sonnet
 effort: high
 depends_on: [05]
