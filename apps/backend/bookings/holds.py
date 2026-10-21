@@ -268,6 +268,12 @@ def release(booking: Booking, *, status: str, now: datetime | None = None) -> bo
     return True
 
 
+def refunds_on_cancel(booking: Booking) -> bool:
+    """Whether a staff cancel of `booking` ends in `needs_refund`: an online booking with its
+    payment recorded, and not demo seed data, whose `pay_demo_…` payment never reached PayMongo."""
+    return booking.source == Source.ONLINE and bool(booking.payment_id) and not booking.is_demo
+
+
 def cancel_booking(booking: Booking, *, by_role: str, now: datetime | None = None) -> str | None:
     """Cancel `booking` for a staff member, freeing its slots. The caller has already checked
     `accounts.roles.can_cancel`; this makes that call site explicit.
@@ -282,8 +288,7 @@ def cancel_booking(booking: Booking, *, by_role: str, now: datetime | None = Non
     now = now or timezone.now()
     with transaction.atomic():
         locked = Booking.objects.select_for_update().get(pk=booking.pk)
-        paid = locked.source == Source.ONLINE and bool(locked.payment_id) and not locked.is_demo
-        status = Status.NEEDS_REFUND if paid else Status.CANCELLED
+        status = Status.NEEDS_REFUND if refunds_on_cancel(locked) else Status.CANCELLED
         if not release(locked, status=status, now=now):
             return None
         if status == Status.NEEDS_REFUND:

@@ -43,6 +43,9 @@ DEMO_LIVE_CAP = 50
 CANT_CANCEL = "You can't cancel this booking."
 CANT_CREATE = "You can't add bookings."
 DEMO_LIMIT = "Demo limit reached. Try again in a few minutes."
+DEMO_FULL = (
+    "The demo has enough bookings for now. Try cancelling one of yours, or come back tomorrow."
+)
 CANCEL_TOASTS = {
     Status.CANCELLED: "Booking cancelled.",
     Status.NEEDS_REFUND: (
@@ -247,7 +250,7 @@ def _create(request):
         return _panel_message(request, DEMO_LIMIT, 429)
     now = timezone.now()
     if role == Role.VIEWER and schedule.viewer_live_bookings(request.user, now) >= DEMO_LIVE_CAP:
-        return _panel_message(request, DEMO_LIMIT, 429)
+        return _panel_message(request, DEMO_FULL, 429)
     form = StaffBookingForm(request.POST, demo_until=_demo_until(role, now))
     if not form.is_valid():
         return _form_response(request, form)

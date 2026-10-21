@@ -23,7 +23,7 @@ request with `HX-Redirect` back to this page and a plain form post with a 303. A
   </div>
 
   {% if detail.needs_refund %}
-    <p class="alert alert-error" role="status">{% if detail.cancelled_at %}This booking was paid, then cancelled by staff, so its slots were freed.{% else %}This booking was paid after its hold expired, so its slots were not reserved.{% endif %} Refund it in the PayMongo dashboard (test mode).</p>
+    <p class="alert alert-error" role="status">This booking was paid, but its slots aren't held (the hold had lapsed or it was cancelled). Refund it in the PayMongo dashboard (test mode).</p>
   {% endif %}
 
   <section class="card stack-sm" aria-labelledby="slot-heading">

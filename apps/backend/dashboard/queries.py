@@ -19,6 +19,7 @@ from django.db.models.functions import Coalesce, ExtractHour, ExtractIsoWeekDay
 from django.utils import timezone
 
 from accounts.roles import Role, can_cancel, can_see_personal_data
+from bookings.holds import refunds_on_cancel
 from bookings.models import Booking, SlotLock
 from bookings.rules import (
     CLOSE_HOUR,
@@ -646,10 +647,5 @@ def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
         cancelled_at=_stamp(booking.cancelled_at),
         anonymized=booking.anonymized_at is not None,
         can_cancel=cancellable,
-        refund_note=(
-            cancellable
-            and role == Role.OWNER
-            and booking.source == Source.ONLINE
-            and booking.status == Status.CONFIRMED
-        ),
+        refund_note=cancellable and role == Role.OWNER and refunds_on_cancel(booking),
     )

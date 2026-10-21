@@ -412,7 +412,9 @@ cleanup expired the hold before the payment was recorded; then it counts as late
 re-claims the same slots if they are still free. If they were taken meanwhile, the slot has
 already started, or the booking was cancelled, the booking becomes `needs_refund`, with the payment recorded on it.
 Refund it by hand in the PayMongo test dashboard, finding the payment by the booking's `payment_id`. The booking stays
-flagged `needs_refund` on the dashboard as an audit trail; nothing in the app clears it. A paid session of one of
+flagged `needs_refund` on the dashboard as an audit trail; nothing in the app clears it.
+An owner cancelling a paid online booking on the dashboard also ends it as `needs_refund` (slots freed, payment
+kept on the booking): refund it the same way. A paid session of one of
 our bookings that the app rejects (wrong amount or metadata) is logged as `payment.rejected … payment=<id>` at ERROR:
 refund that payment too. An unknown session is only a WARNING and never ours to refund: PayMongo sends every webhook
 on the account, which other apps and local development share.

@@ -25,6 +25,10 @@ RATE_NOW = datetime(2026, 11, 2, 4, 1, tzinfo=UTC)
 EMAIL = "juan.cruz@example.com"
 MOBILE = "+639171234567"
 NAME = "Juan Dela Cruz"
+# The detail page's needs_refund callout, true on every path there (late payment, staff cancel).
+REFUND_CALLOUT = (
+    "This booking was paid, but its slots aren't held (the hold had lapsed or it was cancelled)."
+)
 
 
 def detail_url(reference: str) -> str:
@@ -91,8 +95,13 @@ def online(code="mp-02", hour=14, *, is_demo=False) -> Booking:
         customer=Customer(name=NAME, email=EMAIL, mobile=MOBILE),
         now=NOW - timedelta(hours=16),
     )
+    # Recorded as `payments.confirm._record` does; a demo payment has the seed's shape.
     Booking.objects.filter(pk=booking.pk).update(
-        status=Status.CONFIRMED, payment_method="card", paid_at=NOW, is_demo=is_demo
+        status=Status.CONFIRMED,
+        payment_id=f"pay_{'demo' if is_demo else 'test'}_{booking.reference}",
+        payment_method="card",
+        paid_at=NOW,
+        is_demo=is_demo,
     )
     booking.refresh_from_db()
     return booking
@@ -617,6 +626,7 @@ class TestDetail:
         html = owner.get(detail_url("KC-T00001")).content.decode()
 
         assert "needs-refund" not in html
+        assert REFUND_CALLOUT in html
         assert "Refund it in the PayMongo dashboard" in html
         assert "Cancel booking" not in html  # It can no longer be cancelled.
 
@@ -625,8 +635,8 @@ class TestDetail:
 
         html = owner.get(detail_url("KC-T00001")).content.decode()
 
-        assert "This booking was paid, then cancelled by staff" in html
-        assert "after its hold expired" not in html
+        assert REFUND_CALLOUT in html
+        assert "cancelled by staff" not in html and "after its hold expired" not in html
 
     def test_no_callout_for_a_confirmed_booking(self, owner):
         make()
@@ -708,6 +718,14 @@ class TestCancelButton:
 
         assert '<p class="note">Refund it in the PayMongo dashboard (test mode).</p>' in html
         assert queries.get_booking(role=Role.OWNER, reference=booking.reference).refund_note
+
+    def test_no_refund_note_for_the_owner_on_a_demo_online_booking(self, owner):
+        booking = online(is_demo=True)
+
+        html = owner.get(detail_url(booking.reference)).content.decode()
+
+        assert "Cancel booking" in html and "PayMongo" not in html
+        assert not queries.get_booking(role=Role.OWNER, reference=booking.reference).refund_note
 
     def test_the_viewer_never_sees_the_refund_note(self, viewer):
         for booking in (online(), online("mp-03", is_demo=True)):

@@ -16,6 +16,7 @@ from django.utils import timezone
 
 from accounts.roles import Role, can_cancel, can_create_staff_booking, can_see_personal_data
 from bookings.availability import occupancy
+from bookings.holds import refunds_on_cancel
 from bookings.models import Booking, Court
 from bookings.rules import (
     CLOSE_HOUR,
@@ -266,10 +267,5 @@ def booking_detail(booking: Booking, *, role: Role | None) -> BookingDetail:
         payment_method=booking.payment_method,
         note=booking.note if show_note else "",
         can_cancel=cancellable,
-        refund_note=(
-            cancellable
-            and role == Role.OWNER
-            and booking.source == Source.ONLINE
-            and booking.status == Status.CONFIRMED
-        ),
+        refund_note=cancellable and role == Role.OWNER and refunds_on_cancel(booking),
     )

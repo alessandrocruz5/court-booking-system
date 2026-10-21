@@ -82,7 +82,11 @@ def online(code="mp-01", day=TODAY, hour=14, *, is_demo=False, confirm=True) -> 
     )
     fields = {"is_demo": is_demo}
     if confirm:
-        fields.update(status=Status.CONFIRMED, payment_method="card", paid_at=NOW)
+        # Recorded as `payments.confirm._record` does; a demo payment has the seed's shape.
+        payment_id = f"pay_{'demo' if is_demo else 'test'}_{booking.reference}"
+        fields.update(
+            status=Status.CONFIRMED, payment_id=payment_id, payment_method="card", paid_at=NOW
+        )
     Booking.objects.filter(pk=booking.pk).update(**fields)
     booking.refresh_from_db()
     return booking
@@ -447,6 +451,15 @@ class TestPanel:
         assert "Refund it in the PayMongo dashboard (test mode)." in html
         assert_csp_safe(html)
 
+    def test_owner_panel_has_no_refund_note_on_a_demo_online_booking(self, owner):
+        booking = online(is_demo=True)
+
+        html = owner.get(booking_url(booking.reference)).content.decode()
+
+        assert f'hx-post="{cancel_url(booking.reference)}"' in html
+        assert "PayMongo" not in html
+        assert not schedule.booking_detail(booking, role=Role.OWNER).refund_note
+
     def test_viewer_sees_cancel_for_demo_and_walk_in_bookings(self, viewer):
         for booking in (online(is_demo=True), walk_in("mp-02")):
             html = viewer.get(booking_url(booking.reference)).content.decode()
@@ -515,15 +528,22 @@ class TestCancel:
 
         assert response.status_code == 200
         booking.refresh_from_db()
-        assert booking.status == Status.CANCELLED and booking.cancelled_at == NOW
+        # It was paid, so it is freed as needing a refund.
+        assert booking.status == Status.NEEDS_REFUND and booking.cancelled_at == NOW
         assert not SlotLock.objects.filter(booking=booking).exists()
         assert "<html" not in html and 'class="schedule"' in html
         assert booking.reference not in html  # The freed slot is free on the refreshed grid.
         toast = next(a for t, a in Html(html).tags if t == "div" and a.get("id") == "toast")
         assert toast["hx-swap-oob"] == "true" and toast["role"] == "status"
-        assert "Booking cancelled.</div>" in html
+        assert (
+            "Booking cancelled. It was paid: refund it in the PayMongo dashboard (test mode).</div>"
+            in html
+        )
         assert "HX-Trigger" not in response
-        assert f"booking.cancelled ref={booking.reference} role=owner" in caplog.text
+        assert (
+            f"booking.cancelled ref={booking.reference} role=owner status=needs_refund"
+            in caplog.text
+        )
         assert "Maria" not in caplog.text and "maria" not in caplog.text
 
     def test_owner_cancelling_a_paid_online_booking_leaves_it_needing_a_refund(self, owner):
@@ -618,6 +638,16 @@ class TestCancel:
         assert "Booking cancelled.</div>" in response.content.decode()
         booking.refresh_from_db()
         assert booking.status == Status.CANCELLED
+
+    def test_the_owner_just_cancels_a_demo_online_booking(self, owner):
+        booking = online(is_demo=True)
+
+        response = owner.post(cancel_url(booking.reference), headers=HX)
+
+        assert "Booking cancelled.</div>" in response.content.decode()
+        booking.refresh_from_db()
+        assert booking.status == Status.CANCELLED and booking.cancelled_at == NOW
+        assert booking.payment_id.startswith("pay_demo_")
 
     def test_cancelling_twice_is_refused(self, owner):
         booking = walk_in()
@@ -881,7 +911,10 @@ class TestDemoLiveCap:
         response = viewer.post(NEW, form_data(), headers=HX)
 
         assert response.status_code == 429
-        assert "Demo limit reached. Try again in a few minutes." in response.content.decode()
+        assert (
+            "The demo has enough bookings for now. Try cancelling one of yours, or come back "
+            "tomorrow." in response.content.decode()
+        )
         assert response["HX-Retarget"] == "#panel"
         assert Booking.objects.count() == views.DEMO_LIVE_CAP
 
