@@ -1,11 +1,12 @@
 """The staff dashboard's two roles, stored as Django Groups of the same names.
 
 `owner` sees everything. `viewer` is the public demo: personal data masked, and it may cancel only
-demo bookings or ones staff made, never a real visitor's online booking. Neither role has
-`is_staff` or `is_superuser`, and accounts come only from `manage.py seed_staff`.
+demo bookings or ones staff made, and only before they end; never a real visitor's online booking.
+Neither role has `is_staff` or `is_superuser`, and accounts come only from `manage.py seed_staff`.
 Permissions are checked on the server; templates only reflect them.
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 from bookings.rules import Source, Status
@@ -41,13 +42,14 @@ def can_create_staff_booking(role: Role | None) -> bool:
     return role in (Role.OWNER, Role.VIEWER)
 
 
-def can_cancel(role: Role | None, booking) -> bool:
-    """Whether `role` may cancel `booking`. Only a pending or confirmed booking can be cancelled;
-    the viewer only when it's demo data or not an online booking."""
+def can_cancel(role: Role | None, booking, *, now: datetime) -> bool:
+    """Whether `role` may cancel `booking` at `now`. Only a pending or confirmed booking can be
+    cancelled; the viewer only when it's demo data or not an online booking, and only while it
+    hasn't ended. `now` comes from the caller, so this never reads the clock."""
     if booking.status not in _CANCELLABLE:
         return False
     if role == Role.OWNER:
         return True
     if role == Role.VIEWER:
-        return booking.is_demo or booking.source != Source.ONLINE
+        return (booking.is_demo or booking.source != Source.ONLINE) and booking.ends_at > now
     return False

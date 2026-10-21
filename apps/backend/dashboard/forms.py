@@ -35,6 +35,7 @@ RULE_ERRORS = {
     "outside_window": "Staff bookings run from today up to 30 days ahead.",
     "in_the_past": "That time has already passed.",
 }
+BLOCK_REASONS = ("Maintenance", "Resurfacing", "Coaching clinic", "League night", "Private event")
 RULE_ERROR_DEFAULT = "That booking isn't allowed."
 DEFAULT_SPORT = {
     CourtKind.BASKETBALL: Sport.BASKETBALL,
@@ -86,17 +87,42 @@ class StaffBookingForm(forms.Form):
     customer_name = forms.CharField(max_length=80, required=False, label="Customer name")
     note = forms.CharField(max_length=120, required=False)
 
-    def __init__(self, *args, court: Court | None = None, demo_until: date | None = None, **kw):
+    def __init__(
+        self,
+        *args,
+        court: Court | None = None,
+        demo_until: date | None = None,
+        preset_notes: bool = False,
+        **kw,
+    ):
         """`court` narrows the sport choices to the court's kind; `demo_until` is the viewer's
-        last bookable day (None for the owner)."""
+        last bookable day (None for the owner); `preset_notes` limits a block's note to
+        `BLOCK_REASONS`, since everyone sees it."""
         super().__init__(*args, **kw)
+        if preset_notes:
+            self.fields["note"] = forms.ChoiceField(
+                choices=[("", "—"), *((r, r) for r in BLOCK_REASONS)],
+                required=False,
+                label="Reason",
+            )
         self.demo_until = demo_until
         self.court_obj = court
         self.fields["sport"].choices = sports_for(court)
 
     @classmethod
-    def for_cell(cls, *, court_code: str, space: str, hour: int, day: date, demo_until=None):
+    def for_cell(
+        cls,
+        *,
+        court_code: str,
+        space: str,
+        hour: int,
+        day: date,
+        demo_until=None,
+        preset_notes: bool = False,
+    ):
         """An unbound form prefilled for a clicked grid cell, or None for an unknown court."""
+        if "\x00" in court_code:  # Postgres refuses a NUL in a string, so it is a miss, not a 500.
+            return None
         court = Court.objects.filter(code=court_code, is_active=True).first()
         if court is None:
             return None
@@ -111,7 +137,7 @@ class StaffBookingForm(forms.Form):
             "start_hour": hour,
             "hours": 1,
         }
-        return cls(initial=initial, court=court, demo_until=demo_until)
+        return cls(initial=initial, court=court, demo_until=demo_until, preset_notes=preset_notes)
 
     @property
     def is_basketball(self) -> bool:

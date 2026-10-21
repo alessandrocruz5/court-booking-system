@@ -79,17 +79,34 @@ def _requested_day(value: str | None, now) -> date:
     return min(max(day, first), last)
 
 
+def _render_fragment(request, name: str, context: dict, *, status: int = 200) -> HttpResponse:
+    """A schedule partial for htmx; anyone else gets it inside the dashboard shell, never bare."""
+    if _is_htmx(request):
+        return render(request, f"{SCHEDULE}#{name}", context, status=status)
+    return render(
+        request,
+        "dashboard/fragment_page.html",
+        {**context, "fragment": f"{SCHEDULE}#{name}"},
+        status=status,
+    )
+
+
 def _panel_message(request, message: str, status: int) -> HttpResponse:
     """A refusal shown in the side panel, whatever element the request targeted. The htmx config
     in `dashboard/base.html` swaps 403 and 429 responses."""
-    response = render(request, f"{SCHEDULE}#panel", {"message": message}, status=status)
+    response = _render_fragment(request, "panel", {"message": message}, status=status)
     response["HX-Retarget"] = "#panel"
     response["HX-Reswap"] = "innerHTML"
     return response
 
 
 def _grid_response(request, day: date, now, *, toast: str) -> HttpResponse:
-    """The refreshed grid partial, with an out-of-band toast and an emptied side panel."""
+    """The refreshed grid partial, with an out-of-band toast and an emptied side panel. Without
+    htmx, back to that day's schedule."""
+    if not _is_htmx(request):
+        return HttpResponseRedirect(
+            f"{reverse('dashboard:schedule')}?date={day.isoformat()}", status=303
+        )
     grid = schedule.build_grid(day, role=request.staff_role, now=now)
     return render(request, f"{SCHEDULE}#grid", {"grid": grid, "toast": toast})
 
@@ -153,7 +170,7 @@ def bookings_view(request):
 @staff_required
 @require_GET
 def booking_detail_view(request, reference):
-    detail = queries.get_booking(role=request.staff_role, reference=reference)
+    detail = queries.get_booking(role=request.staff_role, reference=reference, now=timezone.now())
     if detail is None:
         raise Http404
     # The list's state, re-validated, so the back link restores it and nothing else gets through.
@@ -169,7 +186,9 @@ def booking_panel(request, reference):
     booking = schedule.get_booking(reference)
     if booking is None:
         raise Http404
-    detail = schedule.booking_detail(booking, role=request.staff_role)
+    if not _is_htmx(request):
+        return HttpResponseRedirect(reverse("dashboard:booking_detail", args=[reference]))
+    detail = schedule.booking_detail(booking, role=request.staff_role, now=timezone.now())
     return render(request, f"{SCHEDULE}#panel", {"detail": detail})
 
 
@@ -180,11 +199,11 @@ def cancel_view(request, reference):
     if booking is None:
         raise Http404
     role = request.staff_role
-    if not can_cancel(role, booking):
+    now = timezone.now()
+    if not can_cancel(role, booking, now=now):
         return _panel_message(request, CANT_CANCEL, 403)
     if not _viewer_write_allowed(request):
         return _panel_message(request, DEMO_LIMIT, 429)
-    now = timezone.now()
     was_pending = booking.status == Status.PENDING
     status = holds.cancel_booking(booking, by_role=role, now=now)
     if status == Status.CANCELLED and was_pending and booking.checkout_session_id:
@@ -209,6 +228,9 @@ def new_view(request):
 
 def _new_panel(request):
     now = timezone.now()
+    if not _is_htmx(request):
+        day = _requested_day(request.GET.get("date"), now)
+        return HttpResponseRedirect(f"{reverse('dashboard:schedule')}?date={day.isoformat()}")
     try:
         hour = int(request.GET.get("hour", ""))
     except ValueError:
@@ -219,6 +241,7 @@ def _new_panel(request):
         hour=hour,
         day=_requested_day(request.GET.get("date"), now),
         demo_until=_demo_until(request.staff_role, now),
+        preset_notes=request.staff_role == Role.VIEWER,
     )
     if form is None:
         raise Http404
@@ -226,7 +249,7 @@ def _new_panel(request):
 
 
 def _form_response(request, form) -> HttpResponse:
-    response = render(request, f"{SCHEDULE}#form", {"form": form})
+    response = _render_fragment(request, "form", {"form": form})
     response["HX-Retarget"] = "#panel"
     response["HX-Reswap"] = "innerHTML"
     return response
@@ -234,14 +257,17 @@ def _form_response(request, form) -> HttpResponse:
 
 def _create(request):
     role = request.staff_role
-    if not _viewer_write_allowed(request):
-        return _panel_message(request, DEMO_LIMIT, 429)
     now = timezone.now()
-    if role == Role.VIEWER and schedule.viewer_live_bookings(request.user, now) >= DEMO_LIVE_CAP:
-        return _panel_message(request, DEMO_FULL, 429)
-    form = StaffBookingForm(request.POST, demo_until=_demo_until(role, now))
+    form = StaffBookingForm(
+        request.POST, demo_until=_demo_until(role, now), preset_notes=role == Role.VIEWER
+    )
+    # Invalid requests don't count against the budget, so validate before charging it.
     if not form.is_valid():
         return _form_response(request, form)
+    if not _viewer_write_allowed(request):
+        return _panel_message(request, DEMO_LIMIT, 429)
+    if role == Role.VIEWER and schedule.viewer_live_bookings(request.user, now) >= DEMO_LIVE_CAP:
+        return _panel_message(request, DEMO_FULL, 429)
     data = form.cleaned_data
     try:
         holds.create_staff_booking(

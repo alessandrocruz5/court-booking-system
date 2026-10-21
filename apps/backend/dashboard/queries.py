@@ -611,8 +611,14 @@ def list_bookings(*, role: Role | None, params: ListParams) -> Page:
     )
 
 
-def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
-    """A booking's full detail, masked for `role`; None when the reference is unknown."""
+def get_booking(
+    *, role: Role | None, reference: str, now: datetime | None = None
+) -> BookingDetail | None:
+    """A booking's full detail, masked for `role`; None when the reference is unknown. `now` is
+    injectable so tests can pin the clock."""
+    if "\x00" in reference:  # Postgres refuses a NUL in a string, so it is a miss, not a 500.
+        return None
+    now = now or timezone.now()
     booking = Booking.objects.select_related("court").filter(reference=reference).first()
     if booking is None:
         return None
@@ -620,7 +626,7 @@ def get_booking(*, role: Role | None, reference: str) -> BookingDetail | None:
     # A walk-in's note is free text a staff member typed, so only the owner sees it; a block's
     # note is its reason (maintenance, an event) and is shown to everyone.
     show_note = booking.source == Source.BLOCK or can_see_personal_data(role)
-    cancellable = can_cancel(role, booking)
+    cancellable = can_cancel(role, booking, now=now)
     return BookingDetail(
         reference=booking.reference,
         court=booking.court.name,

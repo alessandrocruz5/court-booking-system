@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -134,8 +135,12 @@ def test_permissions_by_role():
     assert not can_create_staff_booking(None)
 
 
-def _booking(source="online", status="confirmed", is_demo=False):
-    return SimpleNamespace(source=source, status=status, is_demo=is_demo)
+NOW = datetime(2026, 11, 2, 4, tzinfo=UTC)
+LATER = NOW + timedelta(hours=1)
+
+
+def _booking(source="online", status="confirmed", is_demo=False, ends_at=LATER):
+    return SimpleNamespace(source=source, status=status, is_demo=is_demo, ends_at=ends_at)
 
 
 @pytest.mark.parametrize(
@@ -151,10 +156,17 @@ def _booking(source="online", status="confirmed", is_demo=False):
         (Role.VIEWER, _booking(source="walk_in", status="cancelled"), False),
         (Role.OWNER, _booking(status="expired"), False),
         (None, _booking(source="walk_in"), False),
+        # The viewer may cancel only what hasn't ended; the owner may cancel either.
+        (Role.VIEWER, _booking(source="walk_in", ends_at=NOW - timedelta(minutes=1)), False),
+        (Role.VIEWER, _booking(source="walk_in", ends_at=NOW), False),
+        (Role.VIEWER, _booking(is_demo=True, ends_at=NOW - timedelta(hours=1)), False),
+        (Role.VIEWER, _booking(source="block", ends_at=NOW - timedelta(hours=1)), False),
+        (Role.VIEWER, _booking(source="walk_in", ends_at=NOW + timedelta(minutes=1)), True),
+        (Role.OWNER, _booking(ends_at=NOW - timedelta(hours=1)), True),
     ],
 )
-def test_can_cancel(role, booking, allowed):
-    assert can_cancel(role, booking) is allowed
+def test_cancel_permissions(role, booking, allowed):
+    assert can_cancel(role, booking, now=NOW) is allowed
 
 
 def _request(xff=None, remote="10.0.0.1"):

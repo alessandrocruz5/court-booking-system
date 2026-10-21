@@ -12,7 +12,7 @@ styles or scripts.
   {% if overview.alerts.needs_refund %}
     {% with n=overview.alerts.needs_refund %}
       <p role="status" class="alert alert-error">
-        {% if n == 1 %}1 paid booking needs{% else %}{{ n }} paid bookings need{% endif %} a refund (payment arrived after the hold expired).
+        {% if n == 1 %}1 paid booking needs{% else %}{{ n }} paid bookings need{% endif %} a refund in the PayMongo dashboard (test mode).
       </p>
     {% endwith %}
   {% endif %}

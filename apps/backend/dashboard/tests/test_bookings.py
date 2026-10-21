@@ -815,3 +815,8 @@ class TestCancelFromDetail:
         assert "HX-Redirect" not in response
         booking.refresh_from_db()
         assert booking.status == Status.CONFIRMED
+
+
+@pytest.mark.django_db
+def test_a_nul_in_a_reference_is_a_404(owner):
+    assert owner.get(detail_url("KC-%00AAAA")).status_code == 404
