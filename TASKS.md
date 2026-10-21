@@ -85,5 +85,10 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - Sign-in window 60 s ≤ `nightly.RATE_LIMIT_MAX_AGE` (tested).
     - CBS-10 prompt 24's release checklist should run the runbook's `## Staff dashboard` "Check it" steps on Cloud Run (second-network lockout check and the spoofed-XFF curl loop), and check the browser console for CSP violations (not checked yet).
     - Follow-ups (not scheduled): SlotLock `starts_at` index (heatmap/today queries; expand-only migration); `storefront.views._client_ip` duplicates `core/http._normalise`.
-- [ ] CBS-10 — Dashboard operations and release checklist · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 22, 23, 24 · depends: CBS-9 · model: opus
+- [x] CBS-10 — Dashboard operations and release checklist · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 22, 23, 24 · depends: CBS-9 · model: opus (merged 2026-10-21)
   - **Story:** Adds the schedule grid (walk-ins, blocks, cancellations), the searchable bookings list, and the pre-release checklist and demo script.
+  - **Result:** PR #12 (merge cc3d621). Dashboard schedule grid (walk-ins, blocks, cancel; `schedule.py`, `forms.py`, 20 rows per day), searchable bookings list and detail (`queries.py`, owner/viewer search split, masking in the query layer), `holds.cancel_booking` / `holds.refunds_on_cancel` (paid non-demo online cancels end `needs_refund`), viewer cap `DEMO_LIVE_CAP = 50`; runbook `## Pre-release checklist` (13 items), README `## Demo in 3 minutes`. 730 backend tests. Gate: CI + code-guardian (0 Blockers; 3 SFs fixed in f7584b7; re-review 1 SF + cheap nits fixed in bc28534), then CI only on bc28534.
+  - **Downstream:**
+    - No new tables, migrations or env keys. A cancelled pending hold has its PayMongo checkout session expired on commit via the public `get_client`.
+    - Follow-ups (not scheduled): `overview.html:15` alert copy still says "payment arrived after the hold expired"; web `/book/success` copy for a staff-cancelled paid booking; `holds._expire_checkout` duplicates `confirm._expire_session`; nits N1–N8 from the first review (NUL-byte 500s, budget counted before validation, window drift test, bare fragments without htmx, viewer cancels past real bookings, block-note defacement).
+    - Release: run the runbook `## Pre-release checklist` on Cloud Run before calling the MVP done.
