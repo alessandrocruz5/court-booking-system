@@ -167,8 +167,8 @@ def test_sends_paymongo_the_booking_id_and_no_customer_data(client, fake):
     assert call["booking_id"] == str(booking.id)
     assert call["amount_centavos"] == booking.price_centavos
     assert call["description"] == f"Kalaro Courts booking {booking.reference} (test mode)"
-    assert call["success_url"] == "http://localhost:3000/book/success"
-    assert call["cancel_url"] == "http://localhost:3000/book/cancelled"
+    assert call["success_url"] == f"http://localhost:3000/book/success?ref={booking.reference}"
+    assert call["cancel_url"] == f"http://localhost:3000/book/cancelled?ref={booking.reference}"
     assert call["line_item_name"].startswith("Tennis Court 1 · Tennis · ")
     assert call["line_item_name"].endswith(", 10 AM–12 PM")
     for value in call.values():

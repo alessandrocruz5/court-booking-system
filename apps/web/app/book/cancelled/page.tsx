@@ -5,28 +5,36 @@ import type { ReactNode } from "react";
 import { ApiError, releaseCheckout } from "@/lib/api/client";
 import type { CheckoutRelease } from "@/lib/api/schemas";
 import { releaseHold } from "@/lib/booking/actions";
+import { CHECKOUT_COOKIE, isReference, pickCheckout } from "@/lib/booking/checkout-cookie";
 
 export const metadata: Metadata = { title: "Checkout cancelled", robots: { index: false } };
 
-/** Set by `startCheckout` in `src/lib/booking/actions.ts` (which can't export it). */
-const CHECKOUT_COOKIE = "cb_checkout";
-
 /**
  * Where PayMongo sends the visitor who backs out. Releases the hold named by the httpOnly cookie;
- * the backend never cancels a paid booking. This page never reads `searchParams`.
+ * the backend never cancels a paid booking. The only search param read is `ref`, and it only picks
+ * which of this browser's own cookie entries to release (`pickCheckout`); a `ref` that isn't in the
+ * cookie picks none of them.
  *
  * A speculative prefetch or prerender must not release on the visitor's behalf, so it renders a
  * "Release my hold" button instead: a plain POST form (works without JavaScript) whose action
  * releases the same hold and reloads this page.
  */
-export default async function CancelledPage() {
-  const checkoutSessionId = (await cookies()).get(CHECKOUT_COOKIE)?.value;
+export default async function CancelledPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { ref: rawRef } = await searchParams;
+  const ref = isReference(rawRef) ? rawRef : undefined;
+  const query = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+  const checkoutSessionId = pickCheckout((await cookies()).get(CHECKOUT_COOKIE)?.value, ref);
 
   if (checkoutSessionId && isPrefetch(await headers())) {
     return (
       <Result eyebrow="Checkout cancelled" title="Release your hold?">
         <p className="mt-4 max-w-xl">Release the time you were holding so others can book it.</p>
         <form action={releaseHold} className="row">
+          {ref ? <input type="hidden" name="ref" value={ref} /> : null}
           <button type="submit" className="btn btn-accent">
             Release my hold
           </button>
@@ -54,7 +62,7 @@ export default async function CancelledPage() {
         <Result eyebrow="Already paid" title="You're all set.">
           <p className="mt-4 max-w-xl">This booking is already paid.</p>
           <div className="row">
-            <Link href="/book/success" prefetch={false} className="btn btn-accent">
+            <Link href={`/book/success${query}`} prefetch={false} className="btn btn-accent">
               See your booking
             </Link>
           </div>
@@ -78,7 +86,7 @@ export default async function CancelledPage() {
         <Result eyebrow="Try again" title="Still checking.">
           <p className="mt-4 max-w-xl">We couldn&apos;t check right now. Try again in a moment.</p>
           <div className="row">
-            <Link href="/book/cancelled" prefetch={false} className="btn btn-accent">
+            <Link href={`/book/cancelled${query}`} prefetch={false} className="btn btn-accent">
               Check again
             </Link>
             <Link href="/book" className="btn">
