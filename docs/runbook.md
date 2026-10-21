@@ -543,8 +543,8 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
   posts only its CSRF token. A successful sign-in always lands on `/dashboard/`; a `next` parameter is ignored, and
   the page renders only fixed messages, never text from the URL.
 - **Personal data.** The counters key on an HMAC of the IP, never the IP itself. The nightly job deletes those older
-  than 10 minutes, so a counter lasts up to about a day (`## Demo data and nightly job`, step 3). Sessions store the user's id but no IP or user agent, and
-  the nightly job clears expired ones.
+  than 10 minutes, so a counter lasts up to about a day (`## Demo data and nightly job`, step 3). Sessions store the
+  user's id but no IP or user agent, and the nightly job clears expired ones.
 - **Logs** (logger `cb.auth`) carry reasons and error classes, never an email, a password or an IP:
   - `auth.sign_in_rejected` with `reason=invalid_credentials` (a wrong password, or a user in no role) or
     `reason=rate_limited`.

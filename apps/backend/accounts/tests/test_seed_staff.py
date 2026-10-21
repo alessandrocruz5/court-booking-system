@@ -114,7 +114,41 @@ def test_rerun_moves_a_user_to_exactly_its_role(staff_env):
 
     call_command("seed_staff")
 
+    owner.refresh_from_db()
     assert _groups(owner) == ["owner"]
+    assert owner.is_active
+    assert User.objects.get(username=VIEWER_EMAIL).is_active
+
+
+@pytest.mark.django_db
+def test_swapped_emails_keep_both_accounts_active_in_their_new_roles(staff_env, monkeypatch):
+    call_command("seed_staff")
+    monkeypatch.setenv("STAFF_OWNER_EMAIL", VIEWER_EMAIL)
+    monkeypatch.setenv("DEMO_VIEWER_EMAIL", OWNER_EMAIL)
+
+    call_command("seed_staff")
+
+    old_owner = User.objects.get(username="owner@example.com")
+    old_viewer = User.objects.get(username=VIEWER_EMAIL)
+    assert old_owner.is_active and _groups(old_owner) == ["viewer"]
+    assert old_viewer.is_active and _groups(old_viewer) == ["owner"]
+
+
+@pytest.mark.django_db
+def test_old_viewer_promoted_to_owner_retires_only_the_old_owner(staff_env, monkeypatch):
+    call_command("seed_staff")
+    User.objects.filter(username="owner@example.com").update(is_staff=True, is_superuser=True)
+    monkeypatch.setenv("STAFF_OWNER_EMAIL", VIEWER_EMAIL)
+    monkeypatch.setenv("DEMO_VIEWER_EMAIL", "new-viewer@example.com")
+
+    call_command("seed_staff")
+
+    old_owner = User.objects.get(username="owner@example.com")
+    assert not old_owner.is_active
+    assert not old_owner.is_staff and not old_owner.is_superuser
+    assert _groups(old_owner) == []
+    assert role_of(User.objects.get(username=VIEWER_EMAIL)) == Role.OWNER
+    assert role_of(User.objects.get(username="new-viewer@example.com")) == Role.VIEWER
 
 
 @pytest.mark.django_db

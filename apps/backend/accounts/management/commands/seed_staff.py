@@ -101,14 +101,15 @@ class Command(BaseCommand):
             retired.update(others)
         retired -= set(seeded.values())
         users = get_user_model().objects.filter(pk__in=retired, is_active=True)
-        return users.update(is_active=False)
+        return users.update(is_active=False, is_staff=False, is_superuser=False)
 
     def _delete_sessions(self) -> int:
         # Delete every session. Decoding them to find the staff ones doesn't work: each session is
         # signed with the server's DJANGO_SECRET_KEY, which differs from the laptop's this runs on,
         # so in production every session would decode to {} and none would be deleted. Only staff
         # use Django sessions on this backend (the storefront calls /api/v1/* with a bearer token,
-        # CSRF is cookie-based and messages fall back to cookies), so this signs out exactly staff.
+        # CSRF is cookie-based, and messages are cookie-first and added only by staff views), so
+        # this signs out exactly staff.
         # Second line of defence: `set_password` rotates the session auth hash, so a session that
         # somehow survived is still rejected on its next request.
         deleted, _ = Session.objects.all().delete()
