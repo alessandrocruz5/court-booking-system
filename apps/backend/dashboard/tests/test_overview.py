@@ -447,7 +447,7 @@ class TestPage:
         html = page(client, Role.OWNER)
 
         assert 'role="status"' in html
-        assert "1 paid booking needs a refund (payment arrived after the hold expired)." in html
+        assert "1 paid booking needs a refund in the PayMongo dashboard (test mode)." in html
 
         holds.release(online("mp-02", confirm=False, now=NOW), status=Status.NEEDS_REFUND, now=NOW)
         assert "2 paid bookings need a refund" in page(client, Role.OWNER)

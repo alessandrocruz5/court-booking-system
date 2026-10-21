@@ -85,5 +85,34 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - Sign-in window 60 s ≤ `nightly.RATE_LIMIT_MAX_AGE` (tested).
     - CBS-10 prompt 24's release checklist should run the runbook's `## Staff dashboard` "Check it" steps on Cloud Run (second-network lockout check and the spoofed-XFF curl loop), and check the browser console for CSP violations (not checked yet).
     - Follow-ups (not scheduled): SlotLock `starts_at` index (heatmap/today queries; expand-only migration); `storefront.views._client_ip` duplicates `core/http._normalise`.
-- [ ] CBS-10 — Dashboard operations and release checklist · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 22, 23, 24 · depends: CBS-9 · model: opus
+- [x] CBS-10 — Dashboard operations and release checklist · Added · plan: [[2026-10-16-court-booking-mvp]] prompts: 22, 23, 24 · depends: CBS-9 · model: opus (merged 2026-10-21)
   - **Story:** Adds the schedule grid (walk-ins, blocks, cancellations), the searchable bookings list, and the pre-release checklist and demo script.
+  - **Result:** PR #12 (merge cc3d621). Dashboard schedule grid (walk-ins, blocks, cancel; `schedule.py`, `forms.py`, 20 rows per day), searchable bookings list and detail (`queries.py`, owner/viewer search split, masking in the query layer), `holds.cancel_booking` / `holds.refunds_on_cancel` (paid non-demo online cancels end `needs_refund`), viewer cap `DEMO_LIVE_CAP = 50`; runbook `## Pre-release checklist` (13 items), README `## Demo in 3 minutes`. 730 backend tests. Gate: CI + code-guardian (0 Blockers; 3 SFs fixed in f7584b7; re-review 1 SF + cheap nits fixed in bc28534), then CI only on bc28534.
+  - **Downstream:**
+    - No new tables, migrations or env keys. A cancelled pending hold has its PayMongo checkout session expired on commit via the public `get_client`.
+    - Follow-ups (not scheduled): `overview.html:15` alert copy still says "payment arrived after the hold expired"; web `/book/success` copy for a staff-cancelled paid booking; `holds._expire_checkout` duplicates `confirm._expire_session`; nits N1–N8 from the first review (NUL-byte 500s, budget counted before validation, window drift test, bare fragments without htmx, viewer cancels past real bookings, block-note defacement).
+    - Release: run the runbook `## Pre-release checklist` on Cloud Run before calling the MVP done.
+
+## Sprint 2 — Follow-up fixes   (planned 2026-10-21)
+Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-up-fixes]]
+
+> **Epic:** Clears the triaged follow-ups and deferred items from Sprint 1: API cache headers, duplicate helpers,
+> dashboard hardening for the public demo viewer, drift tests between linked constants, and a checkout that works
+> correctly with two tabs open. No migrations, env keys or API contract changes. Units merge into `develop`, and one
+> `develop → main` release deploys them.
+
+- [x] CBS-12 — API no-store and backend hygiene · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 01, 02 · depends: — · model: opus (merged 2026-10-21)
+  - **Story:** Sends `Cache-Control: no-store` on every `/api/` and `/webhooks/` response, turns off gunicorn's control socket, and keeps one IP normaliser.
+- [x] CBS-13 — One checkout-session expiry, including orphaned sessions · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 03 · depends: CBS-12 · model: opus (merged 2026-10-21)
+  - **Result:** `payments.confirm.expire_session` is now public and used by the dashboard cancel (`dashboard.views._expire_checkout` is gone); `create_booking` expires a created-but-unsaved session. Downstream: patch `payments.confirm.get_client` (not `dashboard.views`) when testing session expiry.
+  - **Story:** The dashboard's cancel reuses `payments.confirm.expire_session`, and a PayMongo session created but never saved is expired.
+- [x] CBS-14 — Dashboard hardening · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 04, 05, 06, 07 · depends: CBS-13 · model: opus (merged 2026-10-21)
+  - **Result:** `can_cancel(role, booking, *, now)` (viewer only before `ends_at`); NUL → 404; viewer budget charged after validation; non-htmx fragments redirect or render `dashboard/fragment_page.html`; `forms.BLOCK_REASONS` with `preset_notes` (viewer). Downstream: dashboard tests that read a fragment must send `headers=HX`; pass `now=NOW` to direct `queries.get_booking`/`schedule.booking_detail` calls. Known: the viewer's walk-in note is also limited to the preset reasons; non-htmx `?court=%00` on the add form gets a 302, not a 404.
+  - **Story:** The viewer cancels only bookings that haven't ended; NUL bytes give 404s; the viewer's budget is charged after validation; no bare fragments without htmx; preset reasons for viewer blocks; the refund alert names no cause.
+- [x] CBS-15 — Drift tests and nightly runbook note · Changed · plan: [[2026-10-21-follow-up-fixes]] prompts: 08 · depends: — · model: haiku (merged 2026-10-21)
+  - **Result:** Drift tests tie rate-limit windows to the prune age and backend `RETENTION_DAYS` to `site.ts` (now a Turbo test input); prune boundary pinned; runbook checks for a running execution before a manual nightly run. Downstream: none.
+  - **Story:** Tests tie the rate-limit windows to the prune age and the backend's retention days to the web's, and pin the prune boundary; the runbook adds a check before a manual nightly run.
+- [~] CBS-16 — Checkout per-tab sessions and result copy · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 09, 10, 11 · depends: CBS-13 · model: opus (merged 2026-10-21)
+  - **Result:** success/cancel URLs carry `?ref=<reference>`; `cb_checkout` holds up to 3 `REF.session` entries (`src/lib/booking/checkout-cookie.ts`); result pages and `releaseHold` pick by `ref`; a bad checkout URL releases its hold; cause-neutral refund copy. Downstream: none. Known: `addCheckout` keeps legacy bare entries, so the legacy fallback can serve a stale `ref` until the cookie ages out (24h; guardian should-fix, not applied).
+  - **Story:** The success and cancel URLs carry `?ref=`, and the `cb_checkout` cookie holds up to 3 booking entries, so each tab's result page acts on its own booking. A bad checkout URL releases its hold, and the refund copy names no cause.
+  - **Release:** after this unit merges, open a `develop → main` PR (it deploys), then run the plan's manual test-mode checks.

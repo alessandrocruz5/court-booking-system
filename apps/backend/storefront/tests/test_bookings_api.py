@@ -10,13 +10,14 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from django.db import IntegrityError, connection
+from django.db import DatabaseError, IntegrityError, connection
 from django.utils import timezone
 
 from bookings import pricing, rules
 from bookings.models import Booking, Court, SlotLock
 from bookings.rules import Status
 from core import ratelimit
+from payments import confirm
 from payments.paymongo import CheckoutSession, PayMongoError
 from storefront import views
 
@@ -32,12 +33,14 @@ MOBILE = "+639000000123"
 
 class FakePayMongo:
     """Stands in for `get_client()`: a context manager whose `create_checkout_session` records its
-    keyword arguments and returns a session, or raises `error`. The first session is `cs_test123`;
-    later ones get a numeric suffix, since the column is unique."""
+    keyword arguments and returns a session, or raises `error`; `expire_checkout_session` records
+    the IDs it expires. The first session is `cs_test123`; later ones get a numeric suffix, since
+    the column is unique."""
 
     def __init__(self, error: Exception | None = None) -> None:
         self.error = error
         self.calls: list[dict] = []
+        self.expired: list[str] = []
 
     def __call__(self):
         return self
@@ -61,6 +64,9 @@ class FakePayMongo:
             metadata={"booking_id": kwargs["booking_id"]},
             payments=(),
         )
+
+    def expire_checkout_session(self, session_id: str) -> None:
+        self.expired.append(session_id)
 
 
 def use_fake_paymongo(monkeypatch, error: Exception | None = None) -> FakePayMongo:
@@ -161,8 +167,8 @@ def test_sends_paymongo_the_booking_id_and_no_customer_data(client, fake):
     assert call["booking_id"] == str(booking.id)
     assert call["amount_centavos"] == booking.price_centavos
     assert call["description"] == f"Kalaro Courts booking {booking.reference} (test mode)"
-    assert call["success_url"] == "http://localhost:3000/book/success"
-    assert call["cancel_url"] == "http://localhost:3000/book/cancelled"
+    assert call["success_url"] == f"http://localhost:3000/book/success?ref={booking.reference}"
+    assert call["cancel_url"] == f"http://localhost:3000/book/cancelled?ref={booking.reference}"
     assert call["line_item_name"].startswith("Tennis Court 1 · Tennis · ")
     assert call["line_item_name"].endswith(", 10 AM–12 PM")
     for value in call.values():
@@ -531,6 +537,41 @@ def test_a_failed_save_of_the_session_id_frees_the_slot(client, monkeypatch, cap
     assert f"booking.checkout_failed ref={failed.reference} error=IntegrityError" in caplog.text
     for pii in (EMAIL, NAME, MOBILE):
         assert pii not in caplog.text
+
+
+@pytest.mark.django_db
+def test_a_session_whose_id_was_not_saved_is_expired(client, monkeypatch):
+    fake = use_fake_paymongo(monkeypatch)
+    monkeypatch.setattr(confirm, "get_client", fake)
+    original_save = Booking.save
+
+    def failing_save(self, *args, update_fields=None, **kwargs):
+        if "checkout_session_id" in (update_fields or ()):
+            raise DatabaseError("connection lost")
+        return original_save(self, *args, update_fields=update_fields, **kwargs)
+
+    monkeypatch.setattr(Booking, "save", failing_save)
+
+    with pytest.raises(DatabaseError):
+        post(client, booking_body())
+
+    failed = Booking.objects.get()
+    assert failed.status == Status.EXPIRED
+    assert not SlotLock.objects.exists()
+    assert fake.expired == [SESSION_ID]
+
+
+@pytest.mark.django_db
+def test_no_session_to_expire_when_paymongo_fails(client, monkeypatch):
+    fake = use_fake_paymongo(
+        monkeypatch, PayMongoError("PayMongo responded 502", 502, ("resource_failed",))
+    )
+    monkeypatch.setattr(confirm, "get_client", fake)
+
+    response = post(client, booking_body())
+
+    assert response.status_code == 503
+    assert fake.expired == []
 
 
 @pytest.mark.django_db

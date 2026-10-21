@@ -1,18 +1,24 @@
 import logging
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from accounts import views as accounts_views
 from bookings import rules
 from bookings.management.commands import nightly
 from bookings.models import Booking, Court, SlotLock
 from bookings.rules import Source, Status
 from core import ratelimit
 from core.models import RateLimit
+from dashboard import views as dashboard_views
+from storefront import views as storefront_views
 
 # Monday 2 November 2026, 03:00 in Manila: when Cloud Scheduler triggers the job.
 NOW = datetime(2026, 11, 2, 3, tzinfo=rules.TIME_ZONE)
@@ -132,6 +138,33 @@ def test_old_rate_limit_rows_are_pruned_and_the_current_window_stays():
 
     assert RateLimit.objects.count() == 1
     assert RateLimit.objects.get().window_start > utc_now - timedelta(minutes=10)
+
+
+@pytest.mark.django_db
+def test_prune_keeps_a_window_exactly_at_the_max_age():
+    utc_now = NOW.astimezone(UTC)
+    cutoff = utc_now - nightly.RATE_LIMIT_MAX_AGE
+    RateLimit.objects.create(key="edge", window_start=cutoff, count=1)
+    RateLimit.objects.create(key="old", window_start=cutoff - timedelta(seconds=1), count=1)
+
+    ratelimit.prune(older_than=nightly.RATE_LIMIT_MAX_AGE, now=utc_now)
+
+    assert list(RateLimit.objects.values_list("key", flat=True)) == ["edge"]
+
+
+def test_every_rate_limit_window_fits_the_prune_age():
+    windows = (
+        storefront_views.WINDOW_SECONDS,
+        dashboard_views.WRITE_WINDOW_SECONDS,
+        accounts_views.SIGN_IN_WINDOW_SECONDS,
+    )
+    assert max(windows) <= nightly.RATE_LIMIT_MAX_AGE.total_seconds()
+
+
+def test_retention_days_match_the_privacy_page():
+    site = (Path(settings.BASE_DIR).parent.parent / "apps/web/src/content/site.ts").read_text()
+    match = re.search(r"^export const RETENTION_DAYS = (\d+);$", site, re.MULTILINE)
+    assert match and int(match.group(1)) == nightly.RETENTION_DAYS
 
 
 @pytest.mark.django_db

@@ -8,7 +8,6 @@ no view here opens a transaction around a PayMongo call. Payment status comes on
 `payments.confirm`, never from the request. No response or log carries customer data (RA 10173).
 """
 
-import ipaddress
 import json
 import re
 from datetime import date
@@ -23,8 +22,9 @@ from bookings.availability import availability
 from bookings.holds import Customer, SlotTaken, create_hold, release
 from bookings.models import Booking, Court
 from bookings.rules import SPORTS, TIME_ZONE, BookingRuleError, Coverage, Sport, Status
+from core.http import normalise_ip
 from core.ratelimit import hit
-from payments.confirm import check_checkout, log_error, release_checkout
+from payments.confirm import check_checkout, expire_session, log_error, release_checkout
 from payments.env import PaymentsConfigError
 from payments.paymongo import PayMongoError, get_client
 
@@ -128,23 +128,6 @@ def _is_int(value) -> bool:
     return type(value) is int
 
 
-def _client_ip(value) -> str | None:
-    """The rate-limit key for a client IP: an IPv4 address, or an IPv6 address's /64 (one
-    subscriber's usual allocation). An IPv4-mapped IPv6 address counts as its IPv4 address; a zone
-    ID (`fe80::1%eth0`) is invalid."""
-    if not isinstance(value, str) or "%" in value:
-        return None
-    try:
-        address = ipaddress.ip_address(value.strip())
-    except ValueError:
-        return None
-    if isinstance(address, ipaddress.IPv6Address):
-        if address.ipv4_mapped is None:
-            return str(ipaddress.ip_network(f"{address}/64", strict=False))
-        address = address.ipv4_mapped
-    return str(address)
-
-
 def _text(value) -> str | None:
     """A trimmed string, or None. Postgres rejects NUL in text, so a NUL is invalid input rather
     than a database error."""
@@ -233,7 +216,7 @@ def create_booking(request):
     name = _name(customer.get("name"))
     email = _email(customer.get("email"))
     mobile = _mobile(customer.get("mobile"))
-    client_ip = _client_ip(body.get("client_ip"))
+    client_ip = normalise_ip(body.get("client_ip"))
 
     court = None
     if _text(court_code):
@@ -287,6 +270,7 @@ def create_booking(request):
         return json_response({"error": error.code}, status=400)
 
     # Outside any transaction: the hold has committed. Any failure from here frees the slot.
+    session = None
     try:
         with get_client() as client:
             session = client.create_checkout_session(
@@ -294,18 +278,27 @@ def create_booking(request):
                 line_item_name=checkout_line_item(booking),
                 amount_centavos=booking.price_centavos,
                 description=f"Kalaro Courts booking {booking.reference} (test mode)",
-                success_url=f"{settings.SITE_URL}/book/success",
-                cancel_url=f"{settings.SITE_URL}/book/cancelled",
+                # `ref` only picks the visitor's own web cookie entry; never trusted for status.
+                success_url=f"{settings.SITE_URL}/book/success?ref={booking.reference}",
+                cancel_url=f"{settings.SITE_URL}/book/cancelled?ref={booking.reference}",
             )
         booking.checkout_session_id = session.id
         booking.save(update_fields=["checkout_session_id", "updated_at"])
     except (PayMongoError, PaymentsConfigError) as error:
         log_error("booking.checkout_failed", error, ref=booking.reference)
         _release_failed_hold(booking)
+        if session is not None:
+            # Created, but its ID wasn't saved: nobody can reach it, and it could still take
+            # a payment.
+            expire_session(session.id)
         return json_response({"error": "payments_unavailable"}, status=503)
     except Exception as error:
         log_error("booking.checkout_failed", error, ref=booking.reference)
         _release_failed_hold(booking)
+        if session is not None:
+            # Created, but its ID wasn't saved: nobody can reach it, and it could still take
+            # a payment.
+            expire_session(session.id)
         raise
 
     return json_response(
@@ -374,7 +367,7 @@ def booking_lookup(request):
 
     reference = _text(body.get("reference"))
     email = _text(body.get("email"))
-    client_ip = _client_ip(body.get("client_ip"))
+    client_ip = normalise_ip(body.get("client_ip"))
     fields = []
     if not reference:
         fields.append("reference")

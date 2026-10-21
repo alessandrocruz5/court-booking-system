@@ -1,0 +1,12 @@
+{% extends "dashboard/base.html" %}
+{% comment %}
+A schedule fragment (side panel or add form) served without htmx, e.g. a refusal or a form error from
+a plain form post. It sits in the dashboard shell so the page carries the test-mode banner.
+`hx-disable` stops htmx from wiring the fragment's `hx-post` / `hx-target="#grid"` to a grid this
+page doesn't have, so the form posts as a plain HTML form.
+{% endcomment %}
+{% block dashboard_title %}Schedule{% endblock %}
+{% block dashboard_content %}
+  <div hx-disable>{% include fragment %}</div>
+  <p><a href="{% url 'dashboard:schedule' %}">Back to the schedule</a></p>
+{% endblock %}
