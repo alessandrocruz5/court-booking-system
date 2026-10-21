@@ -103,7 +103,8 @@ Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-
 
 - [x] CBS-12 — API no-store and backend hygiene · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 01, 02 · depends: — · model: opus (merged 2026-10-21)
   - **Story:** Sends `Cache-Control: no-store` on every `/api/` and `/webhooks/` response, turns off gunicorn's control socket, and keeps one IP normaliser.
-- [ ] CBS-13 — One checkout-session expiry, including orphaned sessions · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 03 · depends: CBS-12 · model: opus
+- [x] CBS-13 — One checkout-session expiry, including orphaned sessions · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 03 · depends: CBS-12 · model: opus (merged 2026-10-21)
+  - **Result:** `payments.confirm.expire_session` is now public and used by the dashboard cancel (`dashboard.views._expire_checkout` is gone); `create_booking` expires a created-but-unsaved session. Downstream: patch `payments.confirm.get_client` (not `dashboard.views`) when testing session expiry.
   - **Story:** The dashboard's cancel reuses `payments.confirm.expire_session`, and a PayMongo session created but never saved is expired.
 - [ ] CBS-14 — Dashboard hardening · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 04, 05, 06, 07 · depends: CBS-13 · model: opus
   - **Story:** The viewer cancels only bookings that haven't ended; NUL bytes give 404s; the viewer's budget is charged after validation; no bare fragments without htmx; preset reasons for viewer blocks; the refund alert names no cause.
