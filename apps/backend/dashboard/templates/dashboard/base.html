@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load static %}
+{% comment %}
+The dashboard shell: header, nav and the vendored htmx. No inline scripts, no hx-on (it needs eval).
+
+CSRF for htmx: `CSRF_COOKIE_HTTPONLY` is on, so htmx can't read the cookie. The token goes in an
+`hx-headers` attribute instead. `templates/base.html` owns <body>, so the attribute sits on the two
+wrappers the shell owns, the header and the page content, which together hold every htmx-driven
+element. Anything htmx-driven must live inside `dashboard_content` or the header.
+
+The page title and body go in `dashboard_title` and `dashboard_content`; `title`, `styles`,
+`header`, `content` and `scripts` belong to this shell.
+{% endcomment %}
+{% block title %}{% block dashboard_title %}Dashboard{% endblock %} · Kalaro Courts staff{% endblock %}
+
+{% block styles %}
+  {# htmx without eval or script tags, no injected indicator styles, and no history cache, so a masked page is never stored client-side. #}
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"historyCacheSize":0}'>
+  <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
+{% endblock %}
+
+{% block header %}
+  <header class="dash-header" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <div class="dash-header-inner">
+      <p class="dash-brand">Kalaro Courts · Staff</p>
+      <span class="role-badge role-{{ request.staff_role }}">{{ request.staff_role|upper }}</span>
+      <form method="post" action="{% url 'accounts:logout' %}" class="dash-signout">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline btn-sm">Sign out</button>
+      </form>
+    </div>
+    <nav class="dash-nav" aria-label="Dashboard">
+      <a href="{% url 'dashboard:overview' %}"{% if request.resolver_match.view_name == 'dashboard:overview' %} aria-current="page"{% endif %}>Overview</a>
+    </nav>
+  </header>
+{% endblock %}
+
+{% block content %}
+  <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="stack">
+    {% if request.staff_role == "viewer" %}
+      <p class="alert alert-note" role="note">You're exploring the demo: customers' contact details are masked.</p>
+    {% endif %}
+    {% block dashboard_content %}{% endblock %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'dashboard/htmx.min.js' %}" defer></script>
+{% endblock %}

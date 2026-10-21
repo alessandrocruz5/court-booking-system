@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+{% comment %}
+Self-contained: Django renders this with no context and no request, so it extends nothing and
+uses only the `static` tag and plain markup.
+{% endcomment %}
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Something went wrong · Kalaro Courts</title>
+    <link rel="stylesheet" href="{% static 'core/base.css' %}">
+  </head>
+  <body>
+    <aside class="banner" aria-label="Test mode">● Fictional venue · Test mode, no real payments</aside>
+    <main class="wrap">
+      <div class="stack narrow">
+        <p class="eyebrow">Error 500</p>
+        <h1>Something went wrong</h1>
+        <p>The server hit an error. Try again in a moment.</p>
+        <p><a href="/dashboard/">Go to the staff dashboard</a></p>
+      </div>
+    </main>
+  </body>
+</html>

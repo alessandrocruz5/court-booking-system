@@ -496,3 +496,102 @@ night. A run that keeps failing breaks the `/privacy` promise: fix it within the
 The nightly job is the only scheduled database use. It wakes Neon once a day for a few minutes (plus the 5 minutes
 before the compute scales to zero), a small share of the 100 CU-hours a month. Don't add other schedules, uptime
 checks or keep-warm pings that touch the database.
+
+## Staff dashboard
+
+The staff dashboard lives in `cb-backend` under `$BACKEND_URL/dashboard/`, signed in with an email and a password.
+There is no sign-up and no Django admin: the only two accounts, `owner` and `viewer` (the public demo), come from
+`manage.py seed_staff`. The owner sees full booking data; the viewer sees customers' contact details masked.
+
+- **Database access.** The dashboard connects as `cb_app_login` like the rest of the backend: see
+  `## Database roles and migrations`. Its sessions and sign-in counters are ordinary tables under `cb_app`'s DML
+  grants.
+- **Accounts.** In `apps/backend/.env` (see `.env.example`), set `STAFF_OWNER_EMAIL` / `STAFF_OWNER_PASSWORD` (from
+  your password manager) and `DEMO_VIEWER_EMAIL` / `DEMO_VIEWER_PASSWORD`, each password at least 16 characters
+  (`python3 -c "import secrets; print(secrets.token_urlsafe(24))"`). Then, from `apps/backend`, once per Neon branch
+  (`dev` first, then `main`), with `MIGRATE_DATABASE_URL` exported for that branch as in
+  `## Database roles and migrations`, step 1 (a variable set in the shell wins over `.env`):
+
+  ```sh
+  DATABASE_URL="$MIGRATE_DATABASE_URL" uv run --env-file .env python manage.py seed_staff
+  ```
+
+  Locally, `uv run --env-file .env python manage.py seed_staff` seeds the `db` service. It creates or updates both
+  accounts by email (the username is the lowercased email; an invalid email exits 2 naming the variable) and prints
+  role names and counts only. **Re-running it resets both passwords and signs everyone out everywhere**: that is also
+  how to rotate a password. It deletes every session, since only staff have Django sessions on this backend (it can't
+  pick out staff sessions: they are signed with Cloud Run's `DJANGO_SECRET_KEY`, not your laptop's). **Changing an
+  email deactivates the old account**: any other member of the `owner` or `viewer` group is removed from it and set
+  inactive (kept, not deleted, as bookings may reference it), and the output counts it under "Accounts
+  deactivated".
+- **The demo on Cloud Run.** The deploy already sets `DEMO_VIEWER_EMAIL` (the GitHub variable from
+  `## Cloud Run (once)`, step 7) and `DEMO_VIEWER_PASSWORD` (the secret `cb-demo-viewer-password`, step 6) on
+  `cb-backend`, never on the job. The secret's value **must equal the `DEMO_VIEWER_PASSWORD` used with
+  `seed_staff`**, and the variable the email. Otherwise the demo button logs `credentials_rejected` and shows "The
+  demo isn't available right now". To change it, add a secret version, redeploy, destroy the old version, and re-run
+  `seed_staff` with the same value. Without the variables, the button is disabled. The owner's credentials are never
+  set on Cloud Run.
+- **How access works.** `@staff_required` on every dashboard view is the real check: it lets in only an active user
+  in the `owner` or `viewer` group, sets the role, and sends `Cache-Control: no-store`. The middleware
+  `DashboardLoginRedirectMiddleware` only redirects anonymous visitors to `/dashboard/login/` early (HTMX requests get
+  `HX-Redirect`); it never grants access. Only `/dashboard/login/` and `/dashboard/demo/` are public. Sessions last 12
+  hours; signing in rotates the session key, and `POST /dashboard/logout/` ends it (a GET is refused with 405).
+- **Sign-in and rate limiting.** The password form and the **Explore the owner demo** button share one limit: 5
+  attempts per minute per client IP, counted in Postgres (`core.ratelimit`, scope `staff_sign_in`), so every instance
+  shares it. The IP is the rightmost `X-Forwarded-For` entry (`core.http.client_ip`). If the database is down, sign-in
+  fails closed with "Sign-in isn't available right now". The demo password stays on the server: the button's form
+  posts only its CSRF token. A successful sign-in always lands on `/dashboard/`; a `next` parameter is ignored, and
+  the page renders only fixed messages, never text from the URL.
+- **Personal data.** The counters key on an HMAC of the IP, never the IP itself. The nightly job deletes those older
+  than 10 minutes, so a counter lasts up to about a day (`## Demo data and nightly job`, step 3). Sessions store the
+  user's id but no IP or user agent, and the nightly job clears expired ones.
+- **Logs** (logger `cb.auth`) carry reasons and error classes, never an email, a password or an IP:
+  - `auth.sign_in_rejected` with `reason=invalid_credentials` (a wrong password, or a user in no role) or
+    `reason=rate_limited`.
+  - `auth.sign_in_failed error=<class>`: the database failed. The visitor sees "Sign-in isn't available right now".
+  - `auth.demo_unavailable` with `reason=env_missing` (set the demo variables and redeploy) or
+    `reason=credentials_rejected` (the env and the seed disagree: re-run `seed_staff` with the same values).
+
+  ```sh
+  gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="cb-backend" AND textPayload:"cb.auth"' --limit 50
+  ```
+
+- **Check it** (production):
+
+  ```sh
+  curl -sI "$BACKEND_URL/dashboard/" | grep -iE '^HTTP|^location'   # 302, location: /dashboard/login/
+  ```
+
+  Then open `$BACKEND_URL/dashboard/login/` and sign in with a wrong password 6 times: the first 5 show "That email
+  and password don't match a staff account", the 6th "Too many sign-in attempts". That locks your IP out of sign-in
+  until the minute ends. Within that same minute, from a second network (a phone with Wi-Fi off, on mobile data), open
+  the sign-in page and try a wrong password once: it must say "don't match", not "Too many sign-in attempts". If the
+  phone is locked out too, the rightmost `X-Forwarded-For` entry isn't the client (`core.http.client_ip`'s
+  assumption): every visitor shares one bucket, so fix that before relying on the limit.
+
+  Once the minute has ended, check that a spoofed `X-Forwarded-For` doesn't buy fresh attempts. From one machine,
+  fetch a CSRF cookie and token, then send 6 wrong sign-ins, each claiming a different client:
+
+  ```sh
+  jar="$(mktemp)"
+  curl -s -c "$jar" -o /dev/null "$BACKEND_URL/dashboard/login/"
+  csrf="$(awk '$6 == "csrftoken" { print $7 }' "$jar")"   # The `csrfmiddlewaretoken` field takes the cookie's value.
+  for n in 1 2 3 4 5 6; do
+    curl -s -o /dev/null -D - -b "$jar" -c "$jar" \
+      -H "Referer: $BACKEND_URL/dashboard/login/" \
+      -H "X-Forwarded-For: 203.0.113.$n" \
+      --data-urlencode "csrfmiddlewaretoken=$csrf" \
+      --data-urlencode "email=nobody@example.com" \
+      --data-urlencode "password=not-the-password" \
+      "$BACKEND_URL/dashboard/login/" | grep -i '^location'
+  done
+  rm -f "$jar"
+  ```
+
+  The first 5 print a `location` ending in `?error=invalid` and the 6th one containing `error=rate_limited`. (HTTPS
+  needs the `Referer` for the CSRF check; a 403 means the cookie or token is missing. If the minute rolled over
+  mid-run, wait for the next one and run it again.) A 6th `error=invalid` means the spoofed header picked the bucket:
+  stop and fix `core.http.client_ip`.
+
+  Then click **Explore the owner demo**: the header says `VIEWER`. Sign out, then sign in with the owner account: the
+  header says `OWNER`.

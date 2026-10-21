@@ -28,7 +28,7 @@ SITE_URL = env_str("SITE_URL").rstrip("/")
 # Bearer token the storefront's server sends on /api/v1/*.
 INTERNAL_API_TOKEN = env_str("INTERNAL_API_TOKEN")
 
-# No django.contrib.admin: the staff dashboard replaces it (review constraint).
+# No Django admin app: the staff dashboard replaces it (review constraint).
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -36,6 +36,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "core",
+    "accounts",
+    "dashboard",
     "bookings",
     "payments",
     "storefront",
@@ -48,6 +50,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Redirect only; `@staff_required` on each dashboard view is the access check.
+    "accounts.middleware.DashboardLoginRedirectMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
@@ -85,6 +89,11 @@ DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Staff sign in with their email as the username; accounts come only from `manage.py seed_staff`.
+AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
+LOGIN_URL = "/dashboard/login/"
+LOGIN_REDIRECT_URL = "/dashboard/"
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -115,6 +124,7 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
 
 SESSION_COOKIE_AGE = 60 * 60 * 12
+SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = True

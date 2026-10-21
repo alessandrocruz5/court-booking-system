@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% comment %}
+Django's CSRF failure page (`django.views.csrf.csrf_failure`). It renders without a request, and
+`reason` is never shown: it only matters to a developer.
+{% endcomment %}
+{% block title %}Form expired · Kalaro Courts{% endblock %}
+{% block content %}
+  <div class="stack narrow">
+    <p class="eyebrow">Error 403</p>
+    <h1>This form has expired</h1>
+    <p>Reload the page and try again. Your browser must allow cookies for this site.</p>
+    <p><a href="/dashboard/login/">Go to staff sign-in</a></p>
+  </div>
+{% endblock %}
