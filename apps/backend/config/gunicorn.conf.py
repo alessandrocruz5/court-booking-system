@@ -11,6 +11,8 @@ worker_class = "gthread"
 threads = 4
 timeout = 30
 graceful_timeout = 10
+# No control socket: nothing uses `gunicornc`, and the Cloud Run container doesn't need it.
+control_socket_disable = True
 
 # Method, path without the query string, status, bytes and seconds. No IP, query or user agent,
 # which keeps personal data out of the logs.
