@@ -470,6 +470,13 @@ class TestPage:
         client.logout()
         assert "Juan Dela Cruz" in page(client, Role.OWNER)
 
+    def test_active_holds_note_uses_the_hold_minutes_rule(self, client, pinned_clock, monkeypatch):
+        assert overview(role=Role.OWNER, now=NOW).alerts.hold_minutes == rules.HOLD_MINUTES
+        assert f"Unpaid, held for {rules.HOLD_MINUTES} minutes" in page(client, Role.OWNER)
+
+        monkeypatch.setattr(queries, "HOLD_MINUTES", 37)
+        assert "Unpaid, held for 37 minutes" in page(client, Role.OWNER)
+
     def test_empty_states(self, client, pinned_clock):
         html = page(client, Role.OWNER)
 

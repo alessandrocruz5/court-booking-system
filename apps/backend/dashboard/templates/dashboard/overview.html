@@ -36,7 +36,7 @@ styles or scripts.
       <div class="card kpi">
         <dt>Active holds</dt>
         <dd>{{ overview.alerts.active_holds }}</dd>
-        <dd class="note">Unpaid, held for 20 minutes</dd>
+        <dd class="note">Unpaid, held for {{ overview.alerts.hold_minutes }} minutes</dd>
       </div>
     </dl>
   </section>

@@ -517,8 +517,13 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
   ```
 
   Locally, `uv run --env-file .env python manage.py seed_staff` seeds the `db` service. It creates or updates both
-  accounts by email (the username is the lowercased email) and prints role names only. **Re-running it resets both
-  passwords and signs both accounts out everywhere**: that is also how to rotate a password.
+  accounts by email (the username is the lowercased email; an invalid email exits 2 naming the variable) and prints
+  role names and counts only. **Re-running it resets both passwords and signs everyone out everywhere**: that is also
+  how to rotate a password. It deletes every session, since only staff have Django sessions on this backend (it can't
+  pick out staff sessions: they are signed with Cloud Run's `DJANGO_SECRET_KEY`, not your laptop's). **Changing an
+  email deactivates the old account**: any other member of the `owner` or `viewer` group is removed from it and set
+  inactive (kept, not deleted, as bookings may reference it), and the output counts it under "Accounts
+  deactivated".
 - **The demo on Cloud Run.** The deploy already sets `DEMO_VIEWER_EMAIL` (the GitHub variable from
   `## Cloud Run (once)`, step 7) and `DEMO_VIEWER_PASSWORD` (the secret `cb-demo-viewer-password`, step 6) on
   `cb-backend`, never on the job. The secret's value **must equal the `DEMO_VIEWER_PASSWORD` used with
@@ -537,8 +542,8 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
   fails closed with "Sign-in isn't available right now". The demo password stays on the server: the button's form
   posts only its CSRF token. A successful sign-in always lands on `/dashboard/`; a `next` parameter is ignored, and
   the page renders only fixed messages, never text from the URL.
-- **Personal data.** The counters key on an HMAC of the IP, never the IP itself, and the nightly job deletes them
-  after 10 minutes (`## Demo data and nightly job`, step 3). Sessions store the user's id but no IP or user agent, and
+- **Personal data.** The counters key on an HMAC of the IP, never the IP itself. The nightly job deletes those older
+  than 10 minutes, so a counter lasts up to about a day (`## Demo data and nightly job`, step 3). Sessions store the user's id but no IP or user agent, and
   the nightly job clears expired ones.
 - **Logs** (logger `cb.auth`) carry reasons and error classes, never an email, a password or an IP:
   - `auth.sign_in_rejected` with `reason=invalid_credentials` (a wrong password, or a user in no role) or
@@ -559,5 +564,34 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
 
   Then open `$BACKEND_URL/dashboard/login/` and sign in with a wrong password 6 times: the first 5 show "That email
   and password don't match a staff account", the 6th "Too many sign-in attempts". That locks your IP out of sign-in
-  until the minute ends. Then click **Explore the owner demo**: the header says `VIEWER`. Sign out, then sign in with
-  the owner account: the header says `OWNER`.
+  until the minute ends. Within that same minute, from a second network (a phone with Wi-Fi off, on mobile data), open
+  the sign-in page and try a wrong password once: it must say "don't match", not "Too many sign-in attempts". If the
+  phone is locked out too, the rightmost `X-Forwarded-For` entry isn't the client (`core.http.client_ip`'s
+  assumption): every visitor shares one bucket, so fix that before relying on the limit.
+
+  Once the minute has ended, check that a spoofed `X-Forwarded-For` doesn't buy fresh attempts. From one machine,
+  fetch a CSRF cookie and token, then send 6 wrong sign-ins, each claiming a different client:
+
+  ```sh
+  jar="$(mktemp)"
+  curl -s -c "$jar" -o /dev/null "$BACKEND_URL/dashboard/login/"
+  csrf="$(awk '$6 == "csrftoken" { print $7 }' "$jar")"   # The `csrfmiddlewaretoken` field takes the cookie's value.
+  for n in 1 2 3 4 5 6; do
+    curl -s -o /dev/null -D - -b "$jar" -c "$jar" \
+      -H "Referer: $BACKEND_URL/dashboard/login/" \
+      -H "X-Forwarded-For: 203.0.113.$n" \
+      --data-urlencode "csrfmiddlewaretoken=$csrf" \
+      --data-urlencode "email=nobody@example.com" \
+      --data-urlencode "password=not-the-password" \
+      "$BACKEND_URL/dashboard/login/" | grep -i '^location'
+  done
+  rm -f "$jar"
+  ```
+
+  The first 5 print a `location` ending in `?error=invalid` and the 6th one containing `error=rate_limited`. (HTTPS
+  needs the `Referer` for the CSRF check; a 403 means the cookie or token is missing. If the minute rolled over
+  mid-run, wait for the next one and run it again.) A 6th `error=invalid` means the spoofed header picked the bucket:
+  stop and fix `core.http.client_ip`.
+
+  Then click **Explore the owner demo**: the header says `VIEWER`. Sign out, then sign in with the owner account: the
+  header says `OWNER`.

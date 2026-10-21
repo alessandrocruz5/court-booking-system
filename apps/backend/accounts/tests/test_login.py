@@ -87,6 +87,24 @@ def _field_names(html, form_id):
     return parser.names
 
 
+class _Tags(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.tags = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
+
+
+def _assert_csp_safe(html):
+    """No inline script and no `hx-on` handler: the CSP allows scripts only from 'self'."""
+    tags = _Tags(html).tags
+    assert [attrs for tag, attrs in tags if tag == "script" and "src" not in attrs] == []
+    assert not [name for _, attrs in tags for name in attrs if name.startswith("hx-on")]
+    assert "javascript:" not in html
+
+
 @pytest.mark.django_db
 class TestLoginPage:
     def test_get_renders_with_banner_csp_and_no_store(self, client, staff):
@@ -102,6 +120,7 @@ class TestLoginPage:
         assert 'href="http://localhost:3000"' in html
         assert "script-src 'self'" in response["Content-Security-Policy"]
         assert "no-store" in response["Cache-Control"]
+        _assert_csp_safe(html)
 
     def test_known_error_key_shows_its_fixed_message(self, client, staff):
         response = client.get(LOGIN, {"error": "rate_limited"})
@@ -139,6 +158,19 @@ class TestPasswordSignIn:
         assert response.status_code == 302
         assert response["Location"] == DASHBOARD
         assert role_of(_signed_in_user(client)) == Role.OWNER
+
+    def test_sign_in_rotates_the_session_key(self, client, staff):
+        client.get(LOGIN)
+        session = client.session
+        session["probe"] = "before sign-in"
+        session.save()
+        old_key = session.session_key
+        assert Session.objects.filter(session_key=old_key).exists()
+
+        assert _sign_in(client)["Location"] == DASHBOARD
+
+        assert client.session.session_key != old_key
+        assert not Session.objects.filter(session_key=old_key).exists()
 
     def test_email_is_trimmed_and_lowercased(self, client, staff):
         response = _sign_in(client, email="  Owner@Example.COM ")
@@ -313,13 +345,16 @@ def test_unknown_page_is_a_404_with_the_banner(client):
     assert "Page not found" in html
     assert 'href="/dashboard/"' in html
     assert "no-such-page" not in html
+    _assert_csp_safe(html)
 
 
 def test_server_error_page_has_the_banner():
     response = server_error(RequestFactory().get("/"))
 
     assert response.status_code == 500
-    assert BANNER in response.content.decode()
+    html = response.content.decode()
+    assert BANNER in html
+    _assert_csp_safe(html)
 
 
 @pytest.mark.parametrize(

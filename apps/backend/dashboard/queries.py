@@ -22,6 +22,7 @@ from bookings.models import Booking, SlotLock
 from bookings.rules import (
     CLOSE_HOUR,
     COURT_COUNTS,
+    HOLD_MINUTES,
     OPEN_HOUR,
     SPACES,
     TIME_ZONE,
@@ -166,6 +167,11 @@ class Upcoming:
 class Alerts:
     needs_refund: int
     active_holds: int
+
+    @property
+    def hold_minutes(self) -> int:
+        """How long an unpaid online booking holds its slot."""
+        return HOLD_MINUTES
 
 
 @dataclass(frozen=True)
