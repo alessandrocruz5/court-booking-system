@@ -59,7 +59,7 @@ setup in the runbook.
       --service-account cb-runtime@… --set-env-vars ALLOW_DEMO_SEED=1,SITE_URL=${{ vars.WEB_URL }},ALLOWED_HOSTS=localhost
       --set-secrets DJANGO_SECRET_KEY=cb-django-secret-key:latest,DATABASE_URL=cb-database-url:latest`.
       The `nightly` command arrives in a later unit. Until then the job exists but nothing schedules it.
-    - Smoke check: `curl -fsS --retry 5 --retry-delay 5 ${{ vars.BACKEND_URL }}/healthz` and the same for
+    - Smoke check: `curl -fsS --retry 5 --retry-delay 5 ${{ vars.BACKEND_URL }}/health` and the same for
       `${{ vars.WEB_URL }}/api/health`.
   - Comment the free-tier choices inline: min 0 (scale to zero), max 1 (a cost cap: one instance per service is plenty for a demo,
     and it halves the worst case under a traffic flood), request-based billing (the default

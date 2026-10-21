@@ -43,13 +43,13 @@ files:
 
 ## Task
 Create `apps/backend`, a Django 6.1 project managed by uv and wired into Turborepo through a `package.json` script
-shim. Give it production-grade settings for Cloud Run and Neon, a no-DB `/healthz` route, fail-fast runtime env
+shim. Give it production-grade settings for Cloud Run and Neon, a no-DB `/health` route, fail-fast runtime env
 validation, pytest against a local Postgres 17 from `compose.yaml`, and ruff.
 
 ## Context
 - Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Prompt 01 created the pnpm/Turbo root (`@cb/*` scope).
 - This Django service later owns the database (Neon Postgres), the booking rules, PayMongo, the webhook, a JSON
-  API for the Next.js storefront, and an HTMX staff dashboard. Today it only boots and answers `/healthz`.
+  API for the Next.js storefront, and an HTMX staff dashboard. Today it only boots and answers `/health`.
 - Toolchain: `uv` 0.13 is installed and manages Python. Pin **Python 3.14** in `.python-version` and set
   `requires-python = ">=3.14,<3.15"`; uv downloads the interpreter itself. Add dependencies with `uv add`:
   - runtime: `django>=6.1,<6.2`, `psycopg[binary]>=3.3`, `dj-database-url>=3` (parses Neon URLs), `gunicorn>=26`,
@@ -175,4 +175,4 @@ cd apps/backend && env -i PATH="$PATH" HOME="$HOME" uv run python manage.py coll
 uv run python manage.py check --deploy --settings=config.settings_test
 ```
 - `pnpm --filter @cb/backend dev` (after copying `.env.example` to `.env` and filling `DJANGO_SECRET_KEY`) serves
-  `http://localhost:8000/healthz` → `{"status":"ok"}`.
+  `http://localhost:8000/health` → `{"status":"ok"}`.

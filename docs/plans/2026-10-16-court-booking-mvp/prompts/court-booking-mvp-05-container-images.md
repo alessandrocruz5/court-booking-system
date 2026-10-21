@@ -76,7 +76,7 @@ add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Co
     Run `-p 8081:8080` with `DJANGO_SECRET_KEY` set to it,
     `DATABASE_URL=postgres://ci:ci@127.0.0.1:5432/ci` (never connected), `ALLOWED_HOSTS=localhost`,
     `CSRF_TRUSTED_ORIGINS=http://localhost:8081`, `SITE_URL=http://localhost:8080` and `INTERNAL_API_TOKEN` (a random
-    40-character value generated the same way). Poll `curl -fsS localhost:8081/healthz`. Assert the container user isn't
+    40-character value generated the same way). Poll `curl -fsS localhost:8081/health`. Assert the container user isn't
     root. Then assert that starting it **without** `DJANGO_SECRET_KEY` exits non-zero (fail-fast env validation).
   - Mark the generated values `# gitleaks:allow` only if the scan flags them. They're generated, never committed.
 - **`.github/dependabot.yml`**: add `docker` entries for `/apps/web` and `/apps/backend`, weekly.
