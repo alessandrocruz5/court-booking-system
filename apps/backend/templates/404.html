@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% comment %}Nothing from the request (such as `request_path`) is rendered.{% endcomment %}
+{% block title %}Page not found · Kalaro Courts{% endblock %}
+{% block content %}
+  <div class="stack narrow">
+    <p class="eyebrow">Error 404</p>
+    <h1>Page not found</h1>
+    <p>That page doesn't exist or has moved.</p>
+    <p><a href="/dashboard/">Go to the staff dashboard</a></p>
+  </div>
+{% endblock %}

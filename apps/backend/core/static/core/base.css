@@ -1,0 +1,220 @@
+/*
+ * Shared styles for every server-rendered page (sign-in, dashboard, error pages). Mobile-first:
+ * the base rules are for a phone, and min-width queries widen the layout.
+ *
+ * The tokens are the same values as the storefront's `apps/web/app/globals.css` (`--color-*`
+ * there). Change both together. `--error` is backend-only for now.
+ */
+
+:root {
+  --ink: #0f172a;
+  --paper: #f8fafc;
+  --court: #16a34a;
+  --clay: #c2410c;
+  --line: #cbd5e1;
+  --error: #b91c1c;
+  --error-bg: #fef2f2;
+  --muted: #475569;
+  --radius: 0.5rem;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 0.2em;
+}
+
+/* The test-mode banner: on every page, error pages included. */
+.banner {
+  display: block;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.5rem 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+
+/* Layout */
+.wrap {
+  margin-inline: auto;
+  max-width: 64rem;
+  padding: 2rem 1rem;
+}
+
+.narrow {
+  max-width: 30rem;
+  margin-inline: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  padding: 1rem;
+}
+
+.eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--clay);
+}
+
+.note {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Forms */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.75rem;
+  width: 100%;
+  /* 16px or more stops iOS from zooming on focus. */
+  font-size: 1rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn-accent {
+  background: var(--clay);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Alerts */
+.alert {
+  border: 1px solid currentcolor;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.alert-error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+/* Focus: a visible ring for keyboard users only. */
+:focus-visible {
+  outline: 3px solid var(--court);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--ink);
+}
+
+@media (min-width: 40rem) {
+  .wrap {
+    padding: 3rem 1.25rem;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+  }
+
+  .card {
+    padding: 1.25rem;
+  }
+}

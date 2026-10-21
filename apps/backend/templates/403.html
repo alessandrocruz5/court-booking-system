@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% comment %}Nothing from the request or the exception is rendered.{% endcomment %}
+{% block title %}Forbidden · Kalaro Courts{% endblock %}
+{% block content %}
+  <div class="stack narrow">
+    <p class="eyebrow">Error 403</p>
+    <h1>Access denied</h1>
+    <p>You don't have access to that page.</p>
+    <p><a href="/dashboard/">Go to the staff dashboard</a></p>
+  </div>
+{% endblock %}

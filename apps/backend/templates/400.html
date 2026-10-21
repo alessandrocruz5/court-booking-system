@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% comment %}Nothing from the request or the exception is rendered.{% endcomment %}
+{% block title %}Bad request · Kalaro Courts{% endblock %}
+{% block content %}
+  <div class="stack narrow">
+    <p class="eyebrow">Error 400</p>
+    <h1>Bad request</h1>
+    <p>The request couldn't be understood. Go back and try again.</p>
+    <p><a href="/dashboard/">Go to the staff dashboard</a></p>
+  </div>
+{% endblock %}

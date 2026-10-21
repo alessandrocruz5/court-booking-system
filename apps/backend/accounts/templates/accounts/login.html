@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% comment %}
+The demo form posts only its CSRF token: the viewer's credentials stay on the server. Nothing from
+the query string is rendered; `error_message` is one of `accounts.views.ERRORS`.
+{% endcomment %}
+{% block title %}Sign in · Kalaro Courts staff{% endblock %}
+{% block content %}
+  <div class="stack narrow">
+    <div class="stack-sm">
+      <p class="eyebrow">KALARO COURTS · STAFF</p>
+      <h1>Sign in</h1>
+    </div>
+
+    {% if error_message %}
+      <p role="alert" class="alert alert-error">{{ error_message }}</p>
+    {% endif %}
+
+    <section aria-labelledby="demo-heading" class="card stack-sm">
+      <h2 id="demo-heading">New here?</h2>
+      <p>See the dashboard as a viewer with demo bookings. Customers' contact details are masked.</p>
+      <form method="post" action="{% url 'accounts:demo' %}" id="demo-form">
+        {% csrf_token %}
+        {% if demo_available %}
+          <button type="submit" class="btn btn-accent">Explore the owner demo</button>
+        {% else %}
+          <button type="submit" class="btn btn-accent" disabled aria-describedby="demo-note">Explore the owner demo</button>
+          <p id="demo-note" class="note">The demo isn't set up on this server yet.</p>
+        {% endif %}
+      </form>
+    </section>
+
+    <section aria-labelledby="staff-heading" class="stack-sm">
+      <h2 id="staff-heading">Staff account</h2>
+      <form method="post" action="{% url 'accounts:login' %}" class="stack-sm">
+        {% csrf_token %}
+        <label class="field">
+          <span>Email</span>
+          <input name="email" type="email" autocomplete="username" required>
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <div>
+          <button type="submit" class="btn btn-primary">Sign in</button>
+        </div>
+      </form>
+    </section>
+
+    {% if site_url %}
+      <p><a href="{{ site_url }}">← Back to the Kalaro Courts site</a></p>
+    {% endif %}
+  </div>
+{% endblock %}
