@@ -4,40 +4,45 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ApiError, confirmCheckout } from "@/lib/api/client";
 import type { BookingSummary, CheckoutStatus } from "@/lib/api/schemas";
+import { CHECKOUT_COOKIE, isReference, pickCheckout } from "@/lib/booking/checkout-cookie";
 import { formatHour, formatPeso } from "@/lib/booking/params";
 
 export const metadata: Metadata = { title: "Your booking", robots: { index: false } };
 
-/** Set by `startCheckout` in `src/lib/booking/actions.ts` (which can't export it). */
-const CHECKOUT_COOKIE = "cb_checkout";
-
 /**
  * Where PayMongo sends the visitor after paying. The result comes only from the backend's check of
- * the session in the httpOnly cookie: this page never reads `searchParams`, so nothing in the URL
- * can change what it shows.
+ * a session in the httpOnly cookie. The only search param read is `ref`, and it only picks which of
+ * this browser's own cookie entries to check (`pickCheckout`); a `ref` that isn't in the cookie
+ * picks none of them. Nothing in the URL can change what the backend says.
  */
-export default async function SuccessPage() {
-  const checkoutSessionId = (await cookies()).get(CHECKOUT_COOKIE)?.value;
+export default async function SuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { ref } = await searchParams;
+  const checkoutSessionId = pickCheckout((await cookies()).get(CHECKOUT_COOKIE)?.value, ref);
+  const href = isReference(ref) ? `/book/success?ref=${encodeURIComponent(ref)}` : "/book/success";
   const result = await check(checkoutSessionId);
 
   switch (result.status) {
     case "confirmed":
-      return result.booking ? <Confirmed booking={result.booking} /> : <Unavailable />;
+      return result.booking ? <Confirmed booking={result.booking} /> : <Unavailable href={href} />;
     case "pending":
       return (
         <Result eyebrow="Payment processing" title="Almost there.">
           <p className="mt-4 max-w-xl">Your payment is still processing.</p>
           <div className="row">
-            <CheckAgain />
+            <CheckAgain href={href} />
           </div>
         </Result>
       );
     case "needs_refund":
       return (
-        <Result eyebrow="Refund due" title="We couldn't keep your slot.">
+        <Result eyebrow="Refund due" title="Your booking didn't go through.">
           <p className="mt-4 max-w-xl">
-            Your payment arrived after your hold expired and the slot was taken. Our staff will
-            refund you (test mode).
+            We received your payment, but this booking was cancelled or its slot was taken. Our
+            staff will refund you (test mode).
           </p>
         </Result>
       );
@@ -50,7 +55,7 @@ export default async function SuccessPage() {
             through.
           </p>
           <div className="row">
-            <CheckAgain />
+            <CheckAgain href={href} />
             <Link href="/book" className="btn">
               Book a court
             </Link>
@@ -74,7 +79,7 @@ export default async function SuccessPage() {
         </Result>
       );
     case "unavailable":
-      return <Unavailable />;
+      return <Unavailable href={href} />;
   }
 }
 
@@ -108,20 +113,21 @@ function Result({
   );
 }
 
-function CheckAgain() {
+/** `href` is `/book/success`, with this page's `ref` when it is a valid reference. */
+function CheckAgain({ href }: { href: string }) {
   return (
-    <Link href="/book/success" prefetch={false} className="btn btn-accent">
+    <Link href={href} prefetch={false} className="btn btn-accent">
       Check again
     </Link>
   );
 }
 
-function Unavailable() {
+function Unavailable({ href }: { href: string }) {
   return (
     <Result eyebrow="Try again" title="Still checking.">
       <p className="mt-4 max-w-xl">We couldn&apos;t check right now. Try again in a moment.</p>
       <div className="row">
-        <CheckAgain />
+        <CheckAgain href={href} />
       </div>
     </Result>
   );

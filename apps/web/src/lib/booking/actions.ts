@@ -5,12 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { ApiError, clientIpFrom, createBooking, releaseCheckout } from "@/lib/api/client";
 import { coverageSchema, sportSchema } from "@/lib/api/schemas";
-
-/**
- * The checkout session ID's cookie, read by `app/book/{success,cancelled}`. Unexported: a
- * `"use server"` file may export only async functions, so those pages repeat the name.
- */
-const CHECKOUT_COOKIE = "cb_checkout";
+import { addCheckout, CHECKOUT_COOKIE, isReference, pickCheckout } from "./checkout-cookie";
 
 export type CheckoutField = "name" | "email" | "mobile" | "consent";
 
@@ -186,16 +181,31 @@ export async function startCheckout(
   // Checked before the cookie is set, so a session the visitor can't reach is never stored.
   if (!isPayMongoCheckout(created.checkout_url)) {
     console.error("checkout.bad_checkout_url");
+    // Best effort: free the slot this visitor can't pay for, rather than leave it held.
+    try {
+      await releaseCheckout(created.checkout_session_id);
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      console.error(`checkout.release_failed ${error.code}`);
+    }
     return { message: UNAVAILABLE, values };
   }
 
-  (await cookies()).set(CHECKOUT_COOKIE, created.checkout_session_id, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/book",
-    maxAge: 86_400,
-  });
+  const store = await cookies();
+  store.set(
+    CHECKOUT_COOKIE,
+    addCheckout(store.get(CHECKOUT_COOKIE)?.value, {
+      reference: created.reference,
+      sessionId: created.checkout_session_id,
+    }),
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/book",
+      maxAge: 86_400,
+    },
+  );
 
   // Outside any try/catch: redirect() throws to end the action.
   redirect(created.checkout_url);
@@ -203,12 +213,15 @@ export async function startCheckout(
 
 /**
  * The cancel page's "Release my hold" button, shown instead of releasing when that page was loaded
- * by a prefetch or prerender. The cookie is the only input. It releases the hold, then reloads the
- * cancel page, whose own release is idempotent (`released` again, or `already_paid`) and shows the
- * result; a failure there shows its fixed copy. Logs only the error code.
+ * by a prefetch or prerender. The form's `ref` only picks one of this browser's own cookie entries
+ * (no or a malformed `ref`: the newest); the session ID always comes from the cookie. It releases
+ * that hold, then reloads the cancel page for the same `ref`, whose own release is idempotent
+ * (`released` again, or `already_paid`) and shows the result; a failure there shows its fixed copy.
+ * Logs only the error code.
  */
-export async function releaseHold(): Promise<void> {
-  const checkoutSessionId = (await cookies()).get(CHECKOUT_COOKIE)?.value;
+export async function releaseHold(formData: FormData): Promise<void> {
+  const ref = formData.get("ref");
+  const checkoutSessionId = pickCheckout((await cookies()).get(CHECKOUT_COOKIE)?.value, ref);
   if (checkoutSessionId) {
     try {
       await releaseCheckout(checkoutSessionId);
@@ -219,5 +232,5 @@ export async function releaseHold(): Promise<void> {
   }
 
   // Outside any try/catch: redirect() throws to end the action.
-  redirect("/book/cancelled");
+  redirect(isReference(ref) ? `/book/cancelled?ref=${ref}` : "/book/cancelled");
 }

@@ -278,8 +278,9 @@ def create_booking(request):
                 line_item_name=checkout_line_item(booking),
                 amount_centavos=booking.price_centavos,
                 description=f"Kalaro Courts booking {booking.reference} (test mode)",
-                success_url=f"{settings.SITE_URL}/book/success",
-                cancel_url=f"{settings.SITE_URL}/book/cancelled",
+                # `ref` only picks the visitor's own web cookie entry; never trusted for status.
+                success_url=f"{settings.SITE_URL}/book/success?ref={booking.reference}",
+                cancel_url=f"{settings.SITE_URL}/book/cancelled?ref={booking.reference}",
             )
         booking.checkout_session_id = session.id
         booking.save(update_fields=["checkout_session_id", "updated_at"])

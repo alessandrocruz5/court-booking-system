@@ -141,12 +141,24 @@ describe("startCheckout success", () => {
     expect(cookieSet).toHaveBeenCalledTimes(1);
     expect(cookieSet).toHaveBeenCalledWith(
       "cb_checkout",
-      "cs_test_abc",
+      "KC-7Q4M2X.cs_test_abc",
       expect.objectContaining({ httpOnly: true, path: "/book", sameSite: "lax", maxAge: 86400 }),
     );
     expect(redirectMock).toHaveBeenCalledWith(CREATED.checkout_url);
     expect(cookieSet.mock.invocationCallOrder[0]).toBeLessThan(
       redirectMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("adds the new entry first and drops the oldest when the cookie already holds 3", async () => {
+    cookieValue = "KC-AAAAAA.cs_test_a|KC-BBBBBB.cs_test_b|KC-CCCCCC.cs_test_c";
+    createBookingMock.mockResolvedValue(CREATED);
+
+    await expect(startCheckout(INITIAL, form())).rejects.toThrow("NEXT_REDIRECT");
+    expect(cookieSet).toHaveBeenCalledWith(
+      "cb_checkout",
+      "KC-7Q4M2X.cs_test_abc|KC-AAAAAA.cs_test_a|KC-BBBBBB.cs_test_b",
+      expect.objectContaining({ httpOnly: true, path: "/book", sameSite: "lax", maxAge: 86400 }),
     );
   });
 
@@ -164,12 +176,28 @@ describe("startCheckout success", () => {
     "https://evil.test/cs_test_abc",
     "https://checkout.paymongo.com:8443/cs_test_abc",
     "https://user@checkout.paymongo.com/cs_test_abc",
-  ])("doesn't redirect to %s", async (checkoutUrl) => {
+  ])("doesn't redirect to %s, and releases the hold it just made", async (checkoutUrl) => {
     createBookingMock.mockResolvedValue({ ...CREATED, checkout_url: checkoutUrl });
+    releaseCheckoutMock.mockResolvedValue({ status: "released" });
 
     const state = await startCheckout(INITIAL, form());
     expect(state.message).toBe("Payments are unavailable right now. Please try again shortly.");
     expect(state.values).toEqual({ name: NAME, email: EMAIL, mobile: MOBILE });
+    expect(releaseCheckoutMock).toHaveBeenCalledTimes(1);
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
+    expect(redirectMock).not.toHaveBeenCalled();
+    expect(cookieSet).not.toHaveBeenCalled();
+  });
+
+  it("still returns the unavailable message when releasing a bad-URL hold fails", async () => {
+    createBookingMock.mockResolvedValue({ ...CREATED, checkout_url: "https://evil.test/x" });
+    releaseCheckoutMock.mockRejectedValue(new ApiError(0, "unavailable"));
+
+    const state = await startCheckout(INITIAL, form());
+    expect(state.message).toBe("Payments are unavailable right now. Please try again shortly.");
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
+    expect(console.error).toHaveBeenCalledWith("checkout.bad_checkout_url");
+    expect(console.error).toHaveBeenCalledWith("checkout.release_failed unavailable");
     expect(redirectMock).not.toHaveBeenCalled();
     expect(cookieSet).not.toHaveBeenCalled();
   });
@@ -250,18 +278,67 @@ describe("startCheckout API errors", () => {
   });
 });
 
+function releaseForm(ref?: string): FormData {
+  const data = new FormData();
+  if (ref !== undefined) data.set("ref", ref);
+  return data;
+}
+
 describe("releaseHold", () => {
-  it("releases the hold named by the cookie, then reloads the cancel page", async () => {
+  const COOKIE = "KC-7Q4M2X.cs_test_abc|KC-AAAAAA.cs_test_a|KC-BBBBBB.cs_test_b";
+
+  it("releases the entry named by ref, then reloads the cancel page for that ref", async () => {
+    cookieValue = COOKIE;
+    releaseCheckoutMock.mockResolvedValue({ status: "released" });
+
+    await expect(releaseHold(releaseForm("KC-AAAAAA"))).rejects.toThrow(
+      "NEXT_REDIRECT /book/cancelled?ref=KC-AAAAAA",
+    );
+    expect(releaseCheckoutMock).toHaveBeenCalledTimes(1);
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_a");
+    expect(redirectMock).toHaveBeenCalledWith("/book/cancelled?ref=KC-AAAAAA");
+  });
+
+  it("without a ref, releases the newest entry and reloads the plain cancel page", async () => {
+    cookieValue = COOKIE;
+    releaseCheckoutMock.mockResolvedValue({ status: "released" });
+
+    await expect(releaseHold(releaseForm())).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
+    expect(redirectMock).toHaveBeenCalledWith("/book/cancelled");
+  });
+
+  it("with a malformed ref, releases the newest entry and drops the ref from the redirect", async () => {
+    cookieValue = COOKIE;
+    releaseCheckoutMock.mockResolvedValue({ status: "released" });
+
+    await expect(releaseHold(releaseForm("../evil"))).rejects.toThrow(
+      "NEXT_REDIRECT /book/cancelled",
+    );
+    expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
+    expect(redirectMock).toHaveBeenCalledWith("/book/cancelled");
+  });
+
+  it("with a ref not in the cookie, releases nothing", async () => {
+    cookieValue = COOKIE;
+
+    await expect(releaseHold(releaseForm("KC-ZZZZZZ"))).rejects.toThrow(
+      "NEXT_REDIRECT /book/cancelled?ref=KC-ZZZZZZ",
+    );
+    expect(releaseCheckoutMock).not.toHaveBeenCalled();
+  });
+
+  it("still releases a legacy bare cookie", async () => {
     cookieValue = "cs_test_abc";
     releaseCheckoutMock.mockResolvedValue({ status: "released" });
 
-    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    await expect(releaseHold(releaseForm())).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
     expect(releaseCheckoutMock).toHaveBeenCalledWith("cs_test_abc");
     expect(redirectMock).toHaveBeenCalledWith("/book/cancelled");
   });
 
   it("without a cookie, never calls the backend", async () => {
-    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    await expect(releaseHold(releaseForm())).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
     expect(releaseCheckoutMock).not.toHaveBeenCalled();
   });
 
@@ -269,7 +346,7 @@ describe("releaseHold", () => {
     cookieValue = "cs_test_abc";
     releaseCheckoutMock.mockRejectedValue(new ApiError(0, "unavailable"));
 
-    await expect(releaseHold()).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
+    await expect(releaseHold(releaseForm())).rejects.toThrow("NEXT_REDIRECT /book/cancelled");
     const logged = consoleSpies.flatMap((spy) => spy.mock.calls.flat().map(String)).join("\n");
     expect(logged).toBe("checkout.release_failed unavailable");
   });
@@ -277,7 +354,7 @@ describe("releaseHold", () => {
   it("rethrows anything that isn't an ApiError", async () => {
     cookieValue = "cs_test_abc";
     releaseCheckoutMock.mockRejectedValue(new TypeError("boom"));
-    await expect(releaseHold()).rejects.toThrow("boom");
+    await expect(releaseHold(releaseForm())).rejects.toThrow("boom");
     expect(redirectMock).not.toHaveBeenCalled();
   });
 });

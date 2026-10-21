@@ -36,11 +36,22 @@ const confirmed = JSON.parse(
 const confirmMock = vi.mocked(confirmCheckout);
 const releaseMock = vi.mocked(releaseCheckout);
 
-/** Calls a page the way Next would, optionally with props it must ignore, and renders it. */
+/** Calls a page the way Next would (no search params unless given), and renders it. */
 async function render(page: unknown, props?: Record<string, unknown>): Promise<string> {
-  const element = await (page as (props: unknown) => Promise<ReactElement>)(props ?? {});
+  const element = await (page as (props: unknown) => Promise<ReactElement>)(
+    props ?? withSearchParams({}),
+  );
   return renderToStaticMarkup(element);
 }
+
+function withSearchParams(params: Record<string, string | string[]>) {
+  return { searchParams: Promise.resolve(params) };
+}
+
+const REF_A = "KC-AAAAAA";
+const REF_B = "KC-BBBBBB";
+/** Two checkouts in one browser: B (newest) then A. */
+const TWO_CHECKOUTS = `${REF_B}.cs_b|${REF_A}.cs_a`;
 
 const forgedSearchParams = {
   searchParams: Promise.resolve({ status: "confirmed", reference: "KC-FORGED" }),
@@ -84,6 +95,17 @@ describe("/book/success", () => {
     expect(confirmMock).not.toHaveBeenCalled();
   });
 
+  it("ignores a forged status/reference with a cookie: only the backend's answer counts", async () => {
+    cookieValue = "cs_x";
+    confirmMock.mockResolvedValue({ ...confirmed, status: "expired" });
+
+    const html = await render(SuccessPage, forgedSearchParams);
+    expect(confirmMock).toHaveBeenCalledWith("cs_x");
+    expect(html).toContain("Your hold has ended.");
+    expect(html).not.toContain("KC-FORGED");
+    expect(html).not.toContain("You&#x27;re booked.");
+  });
+
   it("confirms the session in the cb_checkout cookie and shows the reference", async () => {
     cookieValue = "cs_x";
     confirmMock.mockResolvedValue(confirmed);
@@ -111,6 +133,56 @@ describe("/book/success", () => {
     expect(html).toContain("We couldn&#x27;t check right now.");
     expect(logged()).toBe("checkout.confirm_failed unavailable");
     expect(logged()).not.toContain("cs_x");
+  });
+
+  it("with ?ref= of the older entry, confirms that entry's session", async () => {
+    cookieValue = TWO_CHECKOUTS;
+    confirmMock.mockResolvedValue({ ...confirmed, status: "pending" });
+
+    const html = await render(SuccessPage, withSearchParams({ ref: REF_A }));
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(confirmMock).toHaveBeenCalledWith("cs_a");
+    expect(html).toContain(`href="/book/success?ref=${REF_A}"`);
+  });
+
+  it("with a valid ref that isn't in the cookie, renders not_found and never calls confirmCheckout", async () => {
+    cookieValue = TWO_CHECKOUTS;
+
+    const html = await render(SuccessPage, withSearchParams({ ref: "KC-CCCCCC" }));
+    expect(html).toContain("Nothing to show yet.");
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it("without a ref, confirms the newest entry", async () => {
+    cookieValue = TWO_CHECKOUTS;
+    confirmMock.mockResolvedValue({ ...confirmed, status: "pending" });
+
+    const html = await render(SuccessPage);
+    expect(confirmMock).toHaveBeenCalledWith("cs_b");
+    expect(html).toContain('href="/book/success"');
+  });
+
+  it("still confirms a legacy bare cookie, with or without a ref", async () => {
+    cookieValue = "cs_legacy";
+    confirmMock.mockResolvedValue(confirmed);
+
+    expect(await render(SuccessPage, withSearchParams({ ref: REF_A }))).toContain(
+      "Booking confirmed",
+    );
+    expect(await render(SuccessPage)).toContain("Booking confirmed");
+    expect(confirmMock.mock.calls).toEqual([["cs_legacy"], ["cs_legacy"]]);
+  });
+
+  it("renders needs_refund without naming a cause", async () => {
+    cookieValue = "cs_x";
+    confirmMock.mockResolvedValue({ status: "needs_refund", booking: null });
+
+    const html = await render(SuccessPage);
+    expect(html).toContain("Refund due");
+    expect(html).toContain("Your booking didn&#x27;t go through.");
+    expect(html).toContain("cancelled or its slot was taken");
+    expect(html).toContain("refund you (test mode)");
+    expect(html).not.toContain("hold expired");
   });
 });
 
@@ -160,5 +232,44 @@ describe("/book/cancelled", () => {
     expect(html).toContain("<form");
     expect(html).toContain("Release my hold");
     expect(html).not.toContain("Your hold was released.");
+    expect(html).not.toContain('name="ref"');
+  });
+
+  it("with ?ref= of A, releases A's session only", async () => {
+    cookieValue = TWO_CHECKOUTS;
+    releaseMock.mockResolvedValue({ status: "released" });
+
+    const html = await render(CancelledPage, withSearchParams({ ref: REF_A }));
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledWith("cs_a");
+    expect(html).toContain("Your hold was released.");
+  });
+
+  it("with a valid ref that isn't in the cookie, never calls releaseCheckout", async () => {
+    cookieValue = TWO_CHECKOUTS;
+
+    const html = await render(CancelledPage, withSearchParams({ ref: "KC-CCCCCC" }));
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(html).toContain("Your hold was released.");
+  });
+
+  it("keeps the ref on See your booking and Check again", async () => {
+    cookieValue = TWO_CHECKOUTS;
+    releaseMock.mockResolvedValueOnce({ status: "already_paid" });
+    const paid = await render(CancelledPage, withSearchParams({ ref: REF_A }));
+    expect(paid).toContain(`href="/book/success?ref=${REF_A}"`);
+
+    releaseMock.mockRejectedValueOnce(new ApiError(503, "unavailable"));
+    const unavailable = await render(CancelledPage, withSearchParams({ ref: REF_A }));
+    expect(unavailable).toContain(`href="/book/cancelled?ref=${REF_A}"`);
+  });
+
+  it("on a speculative load with ?ref=, the release form carries the ref", async () => {
+    cookieValue = TWO_CHECKOUTS;
+    requestHeaders = new Headers({ "sec-purpose": "prefetch" });
+
+    const html = await render(CancelledPage, withSearchParams({ ref: REF_A }));
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(html).toContain(`<input type="hidden" name="ref" value="${REF_A}"/>`);
   });
 });

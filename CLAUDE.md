@@ -49,7 +49,8 @@ Each of these is a merge Blocker when violated.
 - **Test mode only.** Only `sk_test_` PayMongo keys are accepted; the webhook rejects `livemode: true`. Every page of
   both apps shows "Fictional venue · Test mode, no real payments".
 - **Payment status comes only from the server**: a server-side checkout-session lookup or the signed webhook, both
-  through one idempotent `confirm_payment()`. URL parameters are never trusted. The price is quoted on the server,
+  through one idempotent `confirm_payment()`. URL parameters are never trusted (`?ref=` on `/book/success` and
+  `/book/cancelled` only picks one of the visitor's own cookie entries). The price is quoted on the server,
   snapshotted on the booking and checked against the paid amount.
 - **Slot integrity.** Every slot claim goes through `bookings.holds` and relies on the `SlotLock` unique constraint;
   never check-then-insert. No external HTTP call inside a DB transaction.
@@ -96,8 +97,9 @@ A diff touching any of these gets the code-guardian review before merge, on top 
   `rules.COURT_COUNTS` must match migration `0002_courts` (tested).
 - **Grants**: new tables get `cb_app` DML only through `ALTER DEFAULT PRIVILEGES` for the owner role that runs
   migrations (`core/migrations/0002_app_role.py`).
-- **Checkout cookie** `cb_checkout` (path `/book`): set in `apps/web/src/lib/booking/actions.ts`, read by
-  `app/book/{success,cancelled}`.
+- **Checkout cookie** `cb_checkout` (path `/book`): up to 3 `REF.session` entries (newest first), defined in
+  `apps/web/src/lib/booking/checkout-cookie.ts`, written by `startCheckout` in `apps/web/src/lib/booking/actions.ts`,
+  read by `app/book/{success,cancelled}`. The backend's success/cancel URLs (`storefront/views.py`) carry `?ref=`.
 - **Demo markers**: `is_demo`, `@example.com`, `+63900000xxxx`, used by `seed_demo`, `nightly` and the dashboard.
 - **Cloud names**: region `asia-southeast1`, Artifact Registry `cb`, services `cb-web`/`cb-backend`, job `cb-nightly`.
 - **Test DB seed data**: the 18 courts come from migration `bookings/0002_courts`. Django empties every table after
