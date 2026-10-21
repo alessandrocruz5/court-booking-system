@@ -276,3 +276,6 @@ a day. That's acceptable on a test-mode demo.
 - 2026-10-21: 06 done (sonnet, 0 retries): non-htmx fragments redirect or render fragment_page.html (hx-disable); existing fragment tests now send HX; 761 backend tests.
 - 2026-10-21: 07 done (sonnet, 0 retries): forms.BLOCK_REASONS + preset_notes for the viewer; cause-neutral refund alert; 767 backend tests.
 - 2026-10-21: CBS-14 PR #15 merged into develop. Gate: CI + code-guardian, APPROVE WITH NITS, 0 Blockers (nits: preset note applies to viewer walk-ins too; non-htmx bad-court add form is a 302).
+- 2026-10-21: CBS-15 build started on branch CBS-15; rollback point 27b20d859192e76919c89b4fcd737b0393e62eda.
+- 2026-10-21: 08 done (haiku, 0 retries): 3 drift/boundary tests in test_nightly.py, site.ts in Turbo test inputs, runbook check before manual nightly run; 770 backend tests.
+- 2026-10-21: CBS-15 PR #16 merged into develop. Gate: CI only.

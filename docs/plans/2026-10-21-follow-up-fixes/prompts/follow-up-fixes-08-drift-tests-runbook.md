@@ -3,7 +3,7 @@ type: prompt
 plan: "[[2026-10-21-follow-up-fixes]]"
 id: 08
 unit: CBS-15
-status: todo
+status: done
 model: haiku
 effort: low
 depends_on: []
