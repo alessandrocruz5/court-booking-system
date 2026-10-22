@@ -36,7 +36,7 @@ Add the write side of the storefront API:
 Add rate limits, and extend the contract fixtures and tests.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`). Read `storefront/{auth,payloads,views,urls}.py`. They have
   `require_service_token` (constant-time bearer token, `csrf_exempt`, `no-store`), `json_response(data, status)`,
   `invalid_request` with a `fields` list, and the contract helper `assert_same_shape` in `tests/test_contract.py`.
@@ -130,7 +130,7 @@ Add rate limits, and extend the contract fixtures and tests.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm format:check
 pnpm --filter @cb/backend lint

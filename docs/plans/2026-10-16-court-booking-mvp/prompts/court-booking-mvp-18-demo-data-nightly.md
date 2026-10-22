@@ -32,7 +32,7 @@ Make the demo look like a real, busy venue on any day someone opens it.
   rate-limit rows and sessions, then reseeds. It runs as the Cloud Run Job `cb-nightly`, triggered by Cloud Scheduler.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`).
 - Read these first:
   - `bookings/models.py` (`Court`, `Booking` with the `is_demo`, payment and customer fields, `SlotLock`).
@@ -117,7 +117,7 @@ Make the demo look like a real, busy venue on any day someone opens it.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

@@ -24,7 +24,7 @@ pushes them to Artifact Registry through Workload Identity Federation (no JSON k
 setup in the runbook.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. CI is `.github/workflows/ci.yml` (`name: CI`, jobs
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. CI is `.github/workflows/ci.yml` (`name: CI`, jobs
   `verify`, `images` and `secrets`). The images are `apps/web/Dockerfile` (context `.`) and `apps/backend/Dockerfile`
   (context `apps/backend`), both on port 8080.
 - **Workflow `.github/workflows/deploy.yml`**:
@@ -110,7 +110,7 @@ setup in the runbook.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 uvx --from pyyaml python -c "import yaml; yaml.safe_load(open('.github/workflows/deploy.yml'))"
 command -v actionlint >/dev/null && actionlint .github/workflows/deploy.yml || echo "actionlint not installed: skipped"
 grep -c 'min-instances 0' .github/workflows/deploy.yml   # 2 (both services)

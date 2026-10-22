@@ -25,7 +25,7 @@ Add GitHub Actions CI (the full verify chain against Postgres 17, plus a gitleak
 repo's `CLAUDE.md` project profile (exact content below), a `README.md`, and the first `docs/runbook.md` sections.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Prompts 01–03 created the pnpm/Turbo root,
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Prompts 01–03 created the pnpm/Turbo root,
   `apps/backend` (Django 6.1, uv, pytest against Postgres on `localhost:54329`, `compose.yaml` service `db`) and
   `apps/web` (Next.js 16, standalone).
 - Reference, **read only**: `/Users/alessandrocruz/Code/fun-run-website/.github/workflows/ci.yml` and `.github/dependabot.yml`.
@@ -181,7 +181,7 @@ A diff touching any of these gets the code-guardian review before merge, on top 
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm install --frozen-lockfile && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 python3 -c "import yaml,sys; [yaml.safe_load(open(f)) for f in ['.github/workflows/ci.yml','.github/dependabot.yml']]" 2>/dev/null || uvx --from pyyaml python -c "import yaml; [yaml.safe_load(open(f)) for f in ['.github/workflows/ci.yml','.github/dependabot.yml']]"

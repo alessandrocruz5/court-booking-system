@@ -38,7 +38,7 @@ Create the pnpm + Turborepo root of the court booking monorepo and its two share
 `@cb/config` and `@cb/env`. Copy them from the fun-run repo's proven setup, renaming the scope `@rr` → `@cb`.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. It's greenfield: only `README.md` and `LICENSE`
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. It's greenfield: only `README.md` and `LICENSE`
   exist, and `docs/plans/` holds planning notes (leave it alone).
 - Reference repo, **read only, never modify**: `/Users/alessandrocruz/Code/fun-run-website`. Copy each file
   below, replacing every `@rr/` with `@cb/` and changing nothing else unless listed here:
@@ -69,7 +69,7 @@ Create the pnpm + Turborepo root of the court booking monorepo and its two share
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm install --frozen-lockfile
 pnpm format:check
 pnpm lint

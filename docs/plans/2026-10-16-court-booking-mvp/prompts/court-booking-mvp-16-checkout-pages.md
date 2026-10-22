@@ -28,7 +28,7 @@ and redirects to PayMongo. `/book/success` and `/book/cancelled` work out the re
 only the cookie and never URL parameters.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Web app: `apps/web` (Next.js 16.4, React 19, zod 4).
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Web app: `apps/web` (Next.js 16.4, React 19, zod 4).
   **Read `node_modules/next/dist/docs/` on server actions, `useActionState`, `cookies()` and `redirect()` first.**
 - Pattern reference, read only: `/Users/alessandrocruz/Code/fun-run-website/apps/web/src/lib/registration/actions.ts`
   and `src/components/registration-form.tsx` (a server action with a client form via `useActionState`, an httpOnly
@@ -120,7 +120,7 @@ only the cookie and never URL parameters.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm format:check && pnpm lint && pnpm typecheck
 pnpm --filter @cb/web test
 env -i PATH="$PATH" HOME="$HOME" pnpm --filter @cb/web build

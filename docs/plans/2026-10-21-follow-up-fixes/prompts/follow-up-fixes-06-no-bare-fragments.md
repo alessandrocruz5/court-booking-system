@@ -24,7 +24,7 @@ A request without `HX-Request: true` to a schedule fragment endpoint gets a full
 stay exactly as they are.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - Review constraint: "Every page of both apps shows 'Fictional venue · Test mode, no real payments'." The banner comes
   from `templates/base.html`, which `dashboard/base.html` extends. A bare partial has no banner.
@@ -72,7 +72,7 @@ stay exactly as they are.
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

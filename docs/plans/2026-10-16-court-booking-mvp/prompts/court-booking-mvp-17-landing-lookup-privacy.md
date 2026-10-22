@@ -33,7 +33,7 @@ Finish the storefront for business owners viewing the demo:
 - A test that ties the site copy to the backend catalog fixture.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Web app: `apps/web` (Next.js 16.4, Tailwind v4 tokens
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Web app: `apps/web` (Next.js 16.4, Tailwind v4 tokens
   `--color-ink/paper/court/clay/line`; `src/content/site.ts` exports `SITE` with `name`, `tagline`, `description`
   and `testModeNotice`, plus `getSiteUrl()`).
 - Server-only API client in `src/lib/api/client.ts`: `getCatalog()`, `lookupBooking({reference, email, clientIp})`
@@ -92,7 +92,7 @@ Finish the storefront for business owners viewing the demo:
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm format:check && pnpm lint && pnpm typecheck
 pnpm --filter @cb/web test
 env -i PATH="$PATH" HOME="$HOME" pnpm --filter @cb/web build

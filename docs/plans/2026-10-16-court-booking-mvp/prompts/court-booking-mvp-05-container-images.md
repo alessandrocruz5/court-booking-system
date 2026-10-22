@@ -28,7 +28,7 @@ Write production Dockerfiles for both apps, for Cloud Run. They must be multi-st
 add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Commands`.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. There is no Dockerfile to copy: fun-run deployed on
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. There is no Dockerfile to copy: fun-run deployed on
   Vercel, and the only other Dockerfile on this machine runs as root, so it's not a pattern to follow.
 - **Web image** (`apps/web/Dockerfile`, build context = **repo root**: `docker build -f apps/web/Dockerfile .`):
   - `apps/web` is Next.js 16 with `output: "standalone"` and `outputFileTracingRoot` set to the monorepo root, so the
@@ -93,7 +93,7 @@ add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Co
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker build -f apps/web/Dockerfile -t cb-web:local .
 docker build -t cb-backend:local apps/backend
 docker run --rm cb-web:local id -u | grep -vx 0

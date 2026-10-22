@@ -29,7 +29,7 @@ Build `/book`, a fast, phone-first flow. The customer picks a sport (and full or
 link (it works without JavaScript), and availability comes from the backend on every request.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Web app: `apps/web` (Next.js 16.4 App Router, React 19,
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Web app: `apps/web` (Next.js 16.4 App Router, React 19,
   Tailwind v4 with tokens `--color-ink/paper/court/clay/line` in `app/globals.css`, `@/*` → `src/*`).
   **Read `node_modules/next/dist/docs/` for `searchParams` (a Promise in Next 16) and Suspense streaming before writing.**
 - The server-only API client is in `src/lib/api/client.ts`. It exports `getCatalog()`, `getAvailability({date, sport,
@@ -89,7 +89,7 @@ link (it works without JavaScript), and availability comes from the backend on e
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm format:check && pnpm lint && pnpm typecheck
 pnpm --filter @cb/web test
 env -i PATH="$PATH" HOME="$HOME" pnpm --filter @cb/web build

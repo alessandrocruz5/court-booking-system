@@ -38,7 +38,7 @@ Port fun-run's organizer-dashboard access model to Django's built-in auth:
 - a trusted client-IP helper
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`). `django.contrib.auth` and `sessions` are installed; **`django.contrib.admin`
   isn't, and must stay out**. `SESSION_COOKIE_AGE` is 12 h. Password validators require a minimum length of 12.
 - **The design being ported** (read only, for intent):
@@ -122,7 +122,7 @@ Port fun-run's organizer-dashboard access model to Django's built-in auth:
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

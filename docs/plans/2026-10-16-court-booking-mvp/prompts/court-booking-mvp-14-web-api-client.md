@@ -31,7 +31,7 @@ validated with zod against schemas that mirror `docs/api/fixtures/*.json`, and t
 two apps can't drift silently.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Web app: `apps/web` (`@cb/web`, Next.js 16.4,
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Web app: `apps/web` (`@cb/web`, Next.js 16.4,
   React 19, zod 4, vitest; `@cb/env` exports `createEnv(schema, source?)` and `baseEnvSchema`, and env is read **per
   call**, never at module top level, because `next build` runs with no env).
 - **Read first**: `docs/api/README.md` and every file in `docs/api/fixtures/`. They're the contract.
@@ -99,7 +99,7 @@ two apps can't drift silently.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm install --frozen-lockfile
 pnpm format:check && pnpm lint && pnpm typecheck
 pnpm --filter @cb/web test

@@ -31,7 +31,7 @@ double-booking impossible. Seed the complex's 18 courts in a data migration. Put
 prompt 09 adds the functions.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. The backend is `apps/backend`: Django 6.1, Python 3.14,
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. The backend is `apps/backend`: Django 6.1, Python 3.14,
   uv, settings `config.settings`, tests `config.settings_test` against Postgres 17 (`docker compose up -d --wait db`,
   port 54329). `pnpm --filter @cb/backend test` runs `makemigrations --check` and pytest. `DEFAULT_AUTO_FIELD` is
   `BigAutoField`, `TIME_ZONE` is `Asia/Manila` and `USE_TZ` is on.
@@ -113,7 +113,7 @@ prompt 09 adds the functions.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test          # includes makemigrations --check

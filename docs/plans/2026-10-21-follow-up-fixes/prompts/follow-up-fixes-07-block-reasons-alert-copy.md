@@ -27,7 +27,7 @@ files:
    booking.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - Why: a block's note is shown to everyone (`dashboard/queries.py:620-622`, and the schedule panel), and the viewer is
   one shared public account. So free text is a defacement risk on a public portfolio demo (code-guardian N8; the user
@@ -66,7 +66,7 @@ files:
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

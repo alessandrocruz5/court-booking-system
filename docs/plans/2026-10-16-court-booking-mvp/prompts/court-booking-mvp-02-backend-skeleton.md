@@ -47,7 +47,7 @@ shim. Give it production-grade settings for Cloud Run and Neon, a no-DB `/health
 validation, pytest against a local Postgres 17 from `compose.yaml`, and ruff.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Prompt 01 created the pnpm/Turbo root (`@cb/*` scope).
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Prompt 01 created the pnpm/Turbo root (`@cb/*` scope).
 - This Django service later owns the database (Neon Postgres), the booking rules, PayMongo, the webhook, a JSON
   API for the Next.js storefront, and an HTMX staff dashboard. Today it only boots and answers `/health`.
 - Toolchain: `uv` 0.13 is installed and manages Python. Pin **Python 3.14** in `.python-version` and set
@@ -166,7 +166,7 @@ validation, pytest against a local Postgres 17 from `compose.yaml`, and ruff.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm install --frozen-lockfile
 pnpm lint                 # includes ruff check + ruff format --check for @cb/backend

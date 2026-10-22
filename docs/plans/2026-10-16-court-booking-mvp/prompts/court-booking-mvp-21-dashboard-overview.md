@@ -40,7 +40,7 @@ htmx) and the **Overview** page an owner would want each morning:
 All data comes from `dashboard/queries.py`, which applies the viewer's masking.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`; `TIME_ZONE = "Asia/Manila"`).
 - Already there:
   - `templates/base.html`, with blocks `title`, `styles`, `header`, `content` and `scripts`. It holds the test-mode
@@ -126,7 +126,7 @@ All data comes from `dashboard/queries.py`, which applies the viewer's masking.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

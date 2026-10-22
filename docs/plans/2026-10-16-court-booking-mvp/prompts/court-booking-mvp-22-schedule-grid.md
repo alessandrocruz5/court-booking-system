@@ -31,7 +31,7 @@ cancel it, or click a free cell to add a **walk-in** or a **block** (maintenance
 partial swap, and every write goes through the slot engine with permissions checked on the server.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`).
 - Already there (read them):
   - `dashboard/{views,urls,queries}.py` and `templates/dashboard/{base,overview}.html`. The base template sets the
@@ -129,7 +129,7 @@ partial swap, and every write goes through the slot engine with permissions chec
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

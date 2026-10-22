@@ -39,7 +39,7 @@ the two read endpoints, `GET /api/v1/catalog` and `GET /api/v1/availability`. Pi
 `docs/api/fixtures/*.json` with a shape-checking test that the web app's tests will also read.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`; `config.settings_test` sets `INTERNAL_API_TOKEN = "t" * 40`).
   `settings.INTERNAL_API_TOKEN` is read from env, and gunicorn refuses to start without it (32+ characters).
 - Already there, read these:
@@ -126,7 +126,7 @@ the two read endpoints, `GET /api/v1/catalog` and `GET /api/v1/availability`. Pi
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm format:check
 pnpm --filter @cb/backend lint

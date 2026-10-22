@@ -29,7 +29,7 @@ the least-privilege group role `cb_app` (DML only, no DDL, can't write `django_m
 login role (`cb_app_login`) is a member of `cb_app`.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests use `config.settings_test` against Postgres 17 at `localhost:54329`, user `postgres`, a superuser). The apps
   installed so far are `django.contrib.{auth,contenttypes,sessions,messages,staticfiles}`, `core` and `bookings`
   (migrations `0001_initial` and `0002_courts`). `core` has no models yet.
@@ -114,7 +114,7 @@ login role (`cb_app_login`) is a member of `cb_app`.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

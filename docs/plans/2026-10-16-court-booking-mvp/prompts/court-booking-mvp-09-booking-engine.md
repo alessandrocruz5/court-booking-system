@@ -30,7 +30,7 @@ availability, payment holds with lazy expiry, staff bookings, release, and late-
 `SlotLock` unique constraint must be the only thing that decides who gets a slot.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests via `config.settings_test` on Postgres 17 at `localhost:54329`). `docker compose up -d --wait db` first.
 - Already there (prompt 07). Read `bookings/models.py` and `bookings/rules.py` first.
   - Models `Court(code, name, kind, sort_order, is_active)` and `Booking`: id, reference, court, sport, coverage, half,
@@ -147,7 +147,7 @@ availability, payment holds with lazy expiry, staff bookings, release, and late-
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

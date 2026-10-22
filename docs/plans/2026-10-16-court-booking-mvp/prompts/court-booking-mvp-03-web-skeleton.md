@@ -45,7 +45,7 @@ page, a per-request CSP nonce, static security headers, safe error screens, a he
 for Cloud Run. Copy the proven shell from fun-run and adapt it.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Prompt 01 created the root and `@cb/config` and `@cb/env`.
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Prompt 01 created the root and `@cb/config` and `@cb/env`.
 - Reference, **read only**: `/Users/alessandrocruz/Code/fun-run-website/apps/web`. Copy and adapt:
   - `package.json`: name `@cb/web`, scripts `dev` (`next dev --port 3000`), `build`, `start`, `lint`, `typecheck`, `test`.
     Dependencies `@cb/env: workspace:*`, `next`, `react`, `react-dom` and `zod` at fun-run's ranges. **Drop** `@rr/db`,
@@ -104,7 +104,7 @@ for Cloud Run. Copy the proven shell from fun-run and adapt it.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 pnpm install --frozen-lockfile
 pnpm format:check && pnpm lint && pnpm typecheck && pnpm test
 env -i PATH="$PATH" HOME="$HOME" pnpm --filter @cb/web build          # builds with no env
