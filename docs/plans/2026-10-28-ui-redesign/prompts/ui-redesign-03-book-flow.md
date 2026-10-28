@@ -2,8 +2,8 @@
 type: prompt
 plan: "[[2026-10-28-ui-redesign]]"
 id: 03
-unit: U1
-status: todo
+unit: CBS-18
+status: done
 model: sonnet
 effort: high
 depends_on: [02]

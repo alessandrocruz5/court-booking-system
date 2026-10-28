@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: audited
+status: in-progress
 repo: court-booking-system
 delivery: pr
 base: develop
@@ -133,30 +133,30 @@ tags: [plan, design]
 ## Units
 | Unit | Title | Category | Prompts | Depends | High-stakes | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| U1 | Storefront redesign | Changed | 01–04 | — | yes (04) | R1–R4: pages match the spec; Free tonight links into `/book`; no "sent to" on success; web suite green |
-| U2 | Check-in model and permission | Added | 05, 06 | — | yes | R5 R6: check-in rules and idempotency tested; viewer matrix tested |
-| U3 | Dashboard redesign and Front desk | Added | 07–11 | U2 | no (code-guardian anyway: new write path) | R7 R8 R9: desk works with and without htmx; full-court blocks span both halves; CSP-safe; masked for the viewer |
-| U4 | Privacy notice and runbook | Changed | 12 | U3 | no | R10: `/privacy` lists the check-in time; the runbook has the 0003 migration step |
+| CBS-18 | Storefront redesign | Changed | 01–04 | — | yes (04) | R1–R4: pages match the spec; Free tonight links into `/book`; no "sent to" on success; web suite green |
+| CBS-19 | Check-in model and permission | Added | 05, 06 | — | yes | R5 R6: check-in rules and idempotency tested; viewer matrix tested |
+| CBS-20 | Dashboard redesign and Front desk | Added | 07–11 | CBS-19 | no (code-guardian anyway: new write path) | R7 R8 R9: desk works with and without htmx; full-court blocks span both halves; CSP-safe; masked for the viewer |
+| CBS-21 | Privacy notice and runbook | Changed | 12 | CBS-20 | no | R10: `/privacy` lists the check-in time; the runbook has the 0003 migration step |
 
-Merge order: U1 and U2 can go in parallel, then U3, then U4. Each is a PR into `develop`.
+Merge order: CBS-18 and CBS-19 can go in parallel, then CBS-20, then CBS-21. Each is a PR into `develop`.
 
 **Release:** before the `develop → main` PR, the user applies migration 0003 with `MIGRATE_DATABASE_URL` (runbook, 12).
 
 ## Prompts
 | # | Title | Unit | Model | Effort | Depends | Group |
 |---|---|---|---|---|---|---|
-| 01 | Web tokens, sport colours and the shell | U1 | sonnet | medium | — | A |
-| 02 | Landing: Free tonight, rates table, FAQ | U1 | sonnet | medium | 01 | A |
-| 03 | /book: step cards and sticky summary | U1 | sonnet | high | 02 | A |
-| 04 | Success, cancelled and Find booking pages | U1 | opus | medium | 03 | A |
-| 05 | Check-in columns, migration and service | U2 | opus | high | — | B |
-| 06 | can_check_in, desk queries, derived statuses | U2 | opus | high | 05 | B |
-| 07 | Dashboard shell: sidebar, tokens, fonts | U3 | sonnet | medium | 06 | C |
-| 08 | Front desk page and check-in action | U3 | opus | high | 07 | C |
-| 09 | Schedule block grid, now marker, panel check-in | U3 | sonnet | high | 08 | C |
-| 10 | Bookings list and detail restyle | U3 | sonnet | medium | 09 | C |
-| 11 | Overview restyle | U3 | sonnet | medium | 10 | C |
-| 12 | Privacy notice and runbook | U4 | sonnet | medium | 11 | D |
+| 01 | Web tokens, sport colours and the shell | CBS-18 | sonnet | medium | — | A |
+| 02 | Landing: Free tonight, rates table, FAQ | CBS-18 | sonnet | medium | 01 | A |
+| 03 | /book: step cards and sticky summary | CBS-18 | sonnet | high | 02 | A |
+| 04 | Success, cancelled and Find booking pages | CBS-18 | opus | medium | 03 | A |
+| 05 | Check-in columns, migration and service | CBS-19 | opus | high | — | B |
+| 06 | can_check_in, desk queries, derived statuses | CBS-19 | opus | high | 05 | B |
+| 07 | Dashboard shell: sidebar, tokens, fonts | CBS-20 | sonnet | medium | 06 | C |
+| 08 | Front desk page and check-in action | CBS-20 | opus | high | 07 | C |
+| 09 | Schedule block grid, now marker, panel check-in | CBS-20 | sonnet | high | 08 | C |
+| 10 | Bookings list and detail restyle | CBS-20 | sonnet | medium | 09 | C |
+| 11 | Overview restyle | CBS-20 | sonnet | medium | 10 | C |
+| 12 | Privacy notice and runbook | CBS-21 | sonnet | medium | 11 | D |
 
 Why opus:
 - 04: `app/book/success/**`
@@ -190,3 +190,13 @@ Manual checks, in test mode after the Release:
 ## Log
 - 2026-10-28: planned from the Claude Design handoff (prototypes `Kalaro Booking`, `Kalaro Staff`). Status draft; next step `/audit-plan`.
 - 2026-10-28: audited (BLOCK → fixed), 12 fixes applied: additive derived filters, one `status_key` rule, no check constraint, `_search` reuse, overview reuse in `desk.py`, `_render_fragment(template=)`, `check_in` URL name, `can_check_in` on both details, `dashboard_heading`, 07 test files, demo seeding dropped (U4 → sonnet). Status audited.
+- 2026-10-28: tickets: epic CBS-17; U1–U4 → CBS-18, CBS-19, CBS-20, CBS-21. Sprint 3 written to TASKS.md.
+- 2026-10-28: CBS-18 started on branch CBS-18. Rollback point afcf34591d3a24785c88074f1f1e05c38875c3cf. Status in-progress.
+- 2026-10-28: 01 done (sonnet, 0 retries): tokens, JetBrains Mono, sticky header and footer, `SPORT_COLORS` with a fixture drift test; web 178 tests green.
+- 2026-10-28: 02 done (sonnet, 0 retries): landing rebuilt; `FreeTonight` (5 parallel `getAvailabilityOnce`, drops failed sports, null if none); rates `<table>`; FAQ `<details>`. Sport colour dots use an inline `style` (web CSP allows `'unsafe-inline'` styles; runtime value, not prototype CSS). Web 187 tests.
+- 2026-10-28: user approved one extra file for CBS-18: `.prettierignore` ignores `docs/plans/**/prototypes/` (root `format:check` was red on `develop` since the Sprint 3 plan merge).
+- 2026-10-28: 03 done (sonnet, 0 retries): four `StepCard`s, `BookingSummary` aside + bottom bar (total = server `slot.price_centavos`), `CourtPicker`, `SubmitOverlay`; `DetailsForm` loses its in-form summary and submit (Continue submits via `form="details-form"`; a `<fieldset disabled={pending}>` keeps the double-submit guard); `withFirstFreeCourt` picks a court for Free tonight's court-less links. Browser-checked by the agent at 1200 and 390px against a stub API.
+- 2026-10-28: fixes after 03 (user: "fix the problems"), in the unit's files: sport swatches are `SPORT_BG` classes on `--color-sport-*` tokens (no inline styles; drift test vs `SPORT_COLORS`); landing shares one `cache(getCatalog)` between Rates and `FreeTonight` (`loadCatalog` prop); `/book`'s bottom bar no longer covers the footer (`body:has(.book-bar)` padding). Stray pre-audit plan copy under `2026-10-22-portfolio-ready/prompts/` deleted (bookkeeping). Web 188 tests.
+- 2026-10-28: 04 done (opus, 0 retries): success/cancelled/`/booking` restyled; dark reference card with `CopyReference` (no "sent to"); success data path byte-identical (only the Sport/Coverage rows merged and Time shows the length). Fix after verify: the lookup's typo hint matched `lookup.ts`'s message string, so it became always-on helper text under the reference input. Web 191 tests.
+- 2026-10-28: CBS-18 shipped as PR #23 (66d4bb0), CI green. Gate: CI + code-guardian → 0 Blockers; fixed in 6c97c6b: pending-submit guard on the external Continue, Free tonight peak label from the server's flag on the earliest start, solid focus rings, stale-start notice, 84px bar room. Not fixed (follow-ups): no server-render tests for `/book` (`withFirstFreeCourt`, `BookingSummary`, `priceLines`, tile court choice); footer copy hard-coded rather than from `SITE.testModeNotice`; Free tonight wording before 07:00 and after 22:00; `copy-reference.test.tsx` fakes React hooks (no DOM env). CI green on 6c97c6b.
+- 2026-10-28: CBS-18 merged (PR #23). Next unit: CBS-19.

@@ -2,8 +2,8 @@
 type: prompt
 plan: "[[2026-10-28-ui-redesign]]"
 id: 04
-unit: U1
-status: todo
+unit: CBS-18
+status: done
 model: opus
 effort: medium
 depends_on: [03]

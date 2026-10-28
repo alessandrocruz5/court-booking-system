@@ -116,3 +116,18 @@ Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-
   - **Result:** success/cancel URLs carry `?ref=<reference>`; `cb_checkout` holds up to 3 `REF.session` entries (`src/lib/booking/checkout-cookie.ts`); result pages and `releaseHold` pick by `ref`; a bad checkout URL releases its hold; cause-neutral refund copy. Downstream: none. Known: `addCheckout` keeps legacy bare entries, so the legacy fallback can serve a stale `ref` until the cookie ages out (24h; guardian should-fix, not applied).
   - **Story:** The success and cancel URLs carry `?ref=`, and the `cb_checkout` cookie holds up to 3 booking entries, so each tab's result page acts on its own booking. A bad checkout URL releases its hold, and the refund copy names no cause.
   - **Release:** after this unit merges, open a `develop → main` PR (it deploys), then run the plan's manual test-mode checks.
+
+## Sprint 3 — UI redesign   (planned 2026-10-28)
+Epic: CBS-17 · Branch base: `develop` · Plan: [[2026-10-28-ui-redesign]]
+
+> **Epic:** Brings the Claude Design prototypes into both apps: a polished storefront (tokens, Free tonight, step-card
+> booking, result pages) and a sidebar staff dashboard with a Front desk check-in flow. One expand-only migration
+> (0003, nullable `checked_in_at`/`checked_in_by`), applied from a laptop before the release. No API contract or env
+> changes. Units merge into `develop`, and one `develop → main` release deploys them.
+
+- [x] CBS-18 — Storefront redesign · Changed · plan: [[2026-10-28-ui-redesign]] prompts: 01, 02, 03, 04 · depends: — · model: opus (merged 2026-10-28)
+  - **Result:** PR #23. New web tokens and shell (JetBrains Mono, sticky header); sport swatches are `SPORT_BG` classes on `--color-sport-*` tokens (no inline styles); landing Free tonight (5 parallel `getAvailabilityOnce`, peak label from the server's flag) and rates table on one `cache(getCatalog)`; `/book` step cards, `BookingSummary` aside/bottom bar (total = server `slot.price_centavos`), Continue submits via `form="details-form"` with a pending guard; success dark reference card with `CopyReference` (data path unchanged). `.prettierignore` ignores `docs/plans/**/prototypes/`. Web 191 tests. Gate: CI + code-guardian (0 Blockers; Should-fixes fixed in 6c97c6b), then CI only.
+  - **Downstream:** no API, schema or env changes. CBS-20 can reuse the web tokens' values for the dashboard. The landing now hits the DB (5 availability queries per render). Follow-ups: `/book` server-render tests (`withFirstFreeCourt`, `BookingSummary`, `priceLines`); footer copy not derived from `SITE.testModeNotice`; Free tonight wording before 07:00/after 22:00; the Owners CTA can mention front-desk check-in once CBS-20 ships.
+- [ ] CBS-19 — Check-in model and permission · Added · plan: [[2026-10-28-ui-redesign]] prompts: 05, 06 · depends: — · model: opus
+- [ ] CBS-20 — Dashboard redesign and Front desk · Added · plan: [[2026-10-28-ui-redesign]] prompts: 07, 08, 09, 10, 11 · depends: CBS-19 · model: opus
+- [ ] CBS-21 — Privacy notice and runbook · Changed · plan: [[2026-10-28-ui-redesign]] prompts: 12 · depends: CBS-20 · model: sonnet

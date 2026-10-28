@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-28-ui-redesign]]"
 id: 12
-unit: U4
+unit: CBS-21
 status: todo
 model: sonnet
 effort: medium
@@ -27,7 +27,7 @@ Demo check-in seeding was dropped in the audit: `cb-nightly` reseeds at 03:00 Ma
 - `/privacy` must match what's stored. Add the time staff checked you in, kept with the booking. No change to retention: anonymization doesn't touch `checked_in_at`, which isn't personal data on its own.
 - `docs/runbook.md`:
   - in "Demo data and nightly job", one line: demo bookings are never pre-checked-in; the viewer can check in today's demo bookings from the Front desk
-  - a "Check-in migration (0003)" step: apply with `MIGRATE_DATABASE_URL` from a laptop **before** merging the Release that ships U2/U3
+  - a "Check-in migration (0003)" step: apply with `MIGRATE_DATABASE_URL` from a laptop **before** merging the Release that ships CBS-19/CBS-20
   - verify with `manage.py showmigrations bookings`
   - rollback: the columns are nullable and unused by the old code, so no contract step is needed
 

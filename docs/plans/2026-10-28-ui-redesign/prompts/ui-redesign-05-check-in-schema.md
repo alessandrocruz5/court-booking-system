@@ -2,7 +2,7 @@
 type: prompt
 plan: "[[2026-10-28-ui-redesign]]"
 id: 05
-unit: U2
+unit: CBS-19
 status: todo
 model: opus
 effort: high
