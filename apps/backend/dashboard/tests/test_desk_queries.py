@@ -142,6 +142,11 @@ class TestWarnings:
         assert result.warning == "Payment not received yet. The slot is on a 20-minute hold."
         assert result.status_label == "Pending"
 
+    def test_pending_with_a_lapsed_hold(self):
+        result = self.warning(status=Status.PENDING, hold_expires_at=NOW - timedelta(minutes=1))
+
+        assert result.warning == "Payment not received, and the hold has lapsed."
+
     def test_running_late(self):
         result = self.warning(hour=11, ends_at=at(13), hours=2)
 
@@ -184,7 +189,30 @@ class TestWarnings:
         )
 
         assert (result.status_key, result.status_label, result.sport) == ("block", "Blocked", "")
+        assert (result.amount, result.warning) == ("", None)
         assert not result.can_check_in
+
+    @pytest.mark.parametrize(
+        "when",
+        [
+            {"hour": 11, "ends_at": at(13), "hours": 2},  # In progress.
+            {"day": TODAY + timedelta(days=1)},
+            {"hour": 9},  # Ended.
+        ],
+    )
+    def test_a_block_never_gets_a_customer_warning(self, when):
+        result = self.warning(
+            source=Source.BLOCK,
+            sport=None,
+            price_centavos=0,
+            customer_name="",
+            customer_email=None,
+            customer_mobile=None,
+            note="Maintenance",
+            **when,
+        )
+
+        assert result.warning is None
 
 
 # --- suggestions ---------------------------------------------------------------------------------
@@ -235,7 +263,7 @@ class TestSuggest:
     def test_limit(self):
         assert len(desk.suggest(Role.OWNER, "maria", NOW, limit=1)) == 1
 
-    @pytest.mark.parametrize("text", ["", "  ", "ma\x00ria", None])
+    @pytest.mark.parametrize("text", ["", "  ", "m", "K", "ma\x00ria", None])
     def test_empty_or_nul_suggests_nothing(self, text):
         assert desk.suggest(Role.OWNER, text, NOW) == ()
 
@@ -316,6 +344,14 @@ class TestArrivingAndOnCourt:
         assert (row.reference, row.status_key, row.ends) == ("KC-A00010", "checked_in", "2 PM")
         assert row.name == "Juan D."
         assert not row.can_check_in
+
+    def test_an_early_check_in_stays_arriving_until_it_starts(self):
+        make("KC-A00013", court=court("mp-11"), hour=14, checked_in_at=NOW)
+
+        arriving = {row.reference: row for row in desk.arriving(Role.OWNER, NOW)}
+        assert arriving["KC-A00013"].status_key == "checked_in"
+        assert not arriving["KC-A00013"].can_check_in
+        assert "KC-A00013" not in [row.reference for row in desk.on_court(Role.OWNER, NOW)]
 
 
 # --- stats ---------------------------------------------------------------------------------------

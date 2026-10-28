@@ -9,6 +9,8 @@ comes from `queries.status_key`, and the overview's aggregates are reused, never
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from django.db.models import Q
+
 from accounts.roles import Role, can_check_in, can_see_personal_data
 from bookings.models import Booking
 from bookings.references import ALPHABET, LENGTH, PREFIX
@@ -45,7 +47,7 @@ class DeskResult:
     pill: str  # "pill-<status_key>", the pill's CSS class.
     name: str  # The personal fields are masked for the viewer.
     contact: str  # Email and mobile, joined with " · ".
-    amount: str
+    amount: str  # Empty for a block.
     court: str
     sport: str  # "Basketball · full"; empty for a block.
     time: str  # "8 PM – 10 PM", prefixed "Fri 30, " when the booking isn't today.
@@ -135,12 +137,17 @@ def _sport(booking: Booking) -> str:
 
 
 def _warning(booking: Booking, now: datetime) -> str | None:
-    """The first that applies: not today, unpaid, running late, ended."""
+    """The first that applies: not today, unpaid, running late, ended. A block has none."""
+    if booking.source == Source.BLOCK:
+        return None
     start = booking.starts_at.astimezone(TIME_ZONE)
     if booking.status == Status.CONFIRMED and start.date() != local_today(now):
         return f"This booking is for {start:%A} {start.day} {start:%b} — not today."
     if booking.status == Status.PENDING:
-        return f"Payment not received yet. The slot is on a {HOLD_MINUTES}-minute hold."
+        # Holds lapse lazily, so a pending row can outlive its hold.
+        if booking.hold_expires_at and booking.hold_expires_at > now:
+            return f"Payment not received yet. The slot is on a {HOLD_MINUTES}-minute hold."
+        return "Payment not received, and the hold has lapsed."
     if booking.status != Status.CONFIRMED:
         return None
     if booking.starts_at < now < booking.ends_at and booking.checked_in_at is None:
@@ -169,7 +176,7 @@ def lookup(role: Role | None, text: str | None, now: datetime) -> DeskResult | N
         pill=f"pill-{key}",
         name=name_for(role, booking.customer_name),
         contact=_contact(role, booking),
-        amount=peso(booking.price_centavos),
+        amount="" if booking.source == Source.BLOCK else peso(booking.price_centavos),
         court=booking.court.name,
         sport=_sport(booking),
         time=_day_prefix(booking, local_today(now)) + _span(booking),
@@ -182,9 +189,10 @@ def lookup(role: Role | None, text: str | None, now: datetime) -> DeskResult | N
 
 def suggest(role: Role | None, text: str | None, now: datetime, limit: int = 5):
     """Up to `limit` of today's and later bookings (never blocks) matching `text`, earliest first.
-    The match is `queries._search`, so the viewer matches names on demo bookings only."""
+    The match is `queries._search`, so the viewer matches names on demo bookings only. It needs 2
+    characters, as the desk's input does."""
     text = (text or "").strip()[:MAX_QUERY_LENGTH]
-    if not text or "\x00" in text:
+    if len(text) < 2 or "\x00" in text:
         return ()
     today = local_today(now)
     bookings = (
@@ -234,12 +242,12 @@ def _today_sold(now: datetime):
 def arriving(
     role: Role | None, now: datetime, within_hours: int = UPCOMING_HOURS
 ) -> tuple[DeskRow, ...]:
-    """Today's confirmed bookings not yet checked in and not ended, starting within
-    `within_hours` (late ones included), earliest first."""
+    """Today's confirmed bookings not on court and not ended, starting within `within_hours`
+    (late ones included), earliest first. One checked in early stays here until it starts."""
     bookings = (
         _today_sold(now)
         .filter(
-            checked_in_at__isnull=True,
+            Q(checked_in_at__isnull=True) | Q(starts_at__gt=now),
             ends_at__gt=now,
             starts_at__lt=now + timedelta(hours=within_hours),
         )
@@ -249,10 +257,10 @@ def arriving(
 
 
 def on_court(role: Role | None, now: datetime) -> tuple[DeskRow, ...]:
-    """Today's checked-in bookings that haven't ended."""
+    """Today's checked-in bookings that have started and haven't ended."""
     bookings = (
         _today_sold(now)
-        .filter(checked_in_at__isnull=False, ends_at__gt=now)
+        .filter(checked_in_at__isnull=False, starts_at__lte=now, ends_at__gt=now)
         .order_by("ends_at", "court__sort_order", "reference")
     )
     return tuple(_desk_row(role, booking, now) for booking in bookings)

@@ -93,7 +93,9 @@ def test_check_in_twice_returns_false_and_keeps_the_first(owner):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("status", [Status.PENDING, Status.EXPIRED, Status.CANCELLED])
+@pytest.mark.parametrize(
+    "status", [Status.PENDING, Status.EXPIRED, Status.CANCELLED, Status.NEEDS_REFUND]
+)
 def test_check_in_refuses_a_booking_that_is_not_confirmed(owner, status):
     extra = {"hold_expires_at": NOW + timedelta(minutes=20)} if status == Status.PENDING else {}
     assert_refused(booking(status=status, **extra), "not_confirmed", by=owner)
