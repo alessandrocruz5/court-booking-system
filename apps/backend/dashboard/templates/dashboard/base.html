@@ -1,16 +1,24 @@
 {% extends "base.html" %}
 {% load static %}
 {% comment %}
-The dashboard shell: header, nav and the vendored htmx. No inline scripts, no hx-on (it needs eval).
+The dashboard shell: a sidebar (brand, nav, role, sign out), the main header and the vendored htmx.
+No inline scripts, no hx-on (it needs eval).
+
+Layout: `body.dash` is a flex row (banner on its own line, then the sidebar and `main.dash-main`).
+Under 900px the sidebar becomes a top bar.
 
 CSRF for htmx: `CSRF_COOKIE_HTTPONLY` is on, so htmx can't read the cookie. The token goes in an
 `hx-headers` attribute instead. `templates/base.html` owns <body>, so the attribute sits on the two
-wrappers the shell owns, the header and the page content, which together hold every htmx-driven
-element. Anything htmx-driven must live inside `dashboard_content` or the header; the `#toast`
+wrappers the shell owns, the sidebar and the page content, which together hold every htmx-driven
+element. Anything htmx-driven must live inside `dashboard_content` or the sidebar; the `#toast`
 status region sits inside the content wrapper for the same reason.
 
-The page title and body go in `dashboard_title` and `dashboard_content`; `title`, `styles`,
-`header`, `content` and `scripts` belong to this shell.
+Blocks a page sets: `dashboard_title` (the <title>) and `dashboard_heading` (the H1, default
+"Dashboard") are separate on purpose, since `dashboard_title` is already defined inside `title` and
+Django rejects a block name defined twice. `dashboard_eyebrow` (default: the venue date and time),
+`dashboard_nav_badge` (empty; the Front desk page fills it with the arriving count) and
+`dashboard_content` are the others. `title`, `styles`, `header`, `content`, `scripts`, `body_class` and
+`main_class` belong to this shell.
 {% endcomment %}
 {% block title %}{% block dashboard_title %}Dashboard{% endblock %} · Kalaro Courts staff{% endblock %}
 
@@ -21,26 +29,43 @@ The page title and body go in `dashboard_title` and `dashboard_content`; `title`
   <link rel="stylesheet" href="{% static 'dashboard/dashboard.css' %}">
 {% endblock %}
 
+{% block body_class %}dash{% endblock %}
+{% block main_class %}dash-main{% endblock %}
+
 {% block header %}
-  <header class="dash-header" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-    <div class="dash-header-inner">
-      <p class="dash-brand">Kalaro Courts · Staff</p>
-      <span class="role-badge role-{{ request.staff_role }}">{{ request.staff_role|upper }}</span>
+  <aside class="dash-side" aria-label="Staff" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <p class="dash-brand">
+      <span class="dash-logo" aria-hidden="true">K</span>
+      <span class="dash-brand-text">
+        <span class="dash-brand-name">Kalaro Courts</span>
+        <span class="dash-brand-sub">Staff</span>
+      </span>
+    </p>
+    <nav class="dash-nav" aria-label="Dashboard">
+      {% url 'dashboard:desk' as desk_url %}
+      {% if desk_url %}
+        <a href="{{ desk_url }}"{% if request.resolver_match.view_name == 'dashboard:desk' %} aria-current="page"{% endif %}>Front desk{% block dashboard_nav_badge %}{% endblock %}</a>
+      {% endif %}
+      <a href="{% url 'dashboard:schedule' %}"{% if request.resolver_match.view_name == 'dashboard:schedule' %} aria-current="page"{% endif %}>Schedule</a>
+      <a href="{% url 'dashboard:bookings' %}"{% if request.resolver_match.view_name == 'dashboard:bookings' or request.resolver_match.view_name == 'dashboard:booking_detail' %} aria-current="page"{% endif %}>Bookings</a>
+      <a href="{% url 'dashboard:overview' %}"{% if request.resolver_match.view_name == 'dashboard:overview' %} aria-current="page"{% endif %}>Overview</a>
+    </nav>
+    <div class="dash-side-foot">
+      <p class="dash-role">Role <span class="role-badge role-{{ request.staff_role }}">{{ request.staff_role|upper }}</span></p>
       <form method="post" action="{% url 'accounts:logout' %}" class="dash-signout">
         {% csrf_token %}
         <button type="submit" class="btn btn-outline btn-sm">Sign out</button>
       </form>
     </div>
-    <nav class="dash-nav" aria-label="Dashboard">
-      <a href="{% url 'dashboard:overview' %}"{% if request.resolver_match.view_name == 'dashboard:overview' %} aria-current="page"{% endif %}>Overview</a>
-      <a href="{% url 'dashboard:schedule' %}"{% if request.resolver_match.view_name == 'dashboard:schedule' %} aria-current="page"{% endif %}>Schedule</a>
-      <a href="{% url 'dashboard:bookings' %}"{% if request.resolver_match.view_name == 'dashboard:bookings' or request.resolver_match.view_name == 'dashboard:booking_detail' %} aria-current="page"{% endif %}>Bookings</a>
-    </nav>
-  </header>
+  </aside>
 {% endblock %}
 
 {% block content %}
   <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="stack">
+    <header>
+      <p class="dash-eyebrow">{% block dashboard_eyebrow %}{% now "l j F · g:i A" %}{% endblock %}</p>
+      <h1 class="dash-heading">{% block dashboard_heading %}Dashboard{% endblock %}</h1>
+    </header>
     {% if request.staff_role == "viewer" %}
       <p class="alert alert-note" role="note">You're exploring the demo: customers' contact details are masked.</p>
     {% endif %}

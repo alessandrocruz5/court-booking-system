@@ -140,7 +140,7 @@ class SportRevenue:
 @dataclass(frozen=True)
 class HeatCell:
     pct: int  # 0-100
-    level: int  # 0-5: the CSS class `heat-<level>`.
+    level: int  # 0-9, one per 10%: the CSS class `heat-<level>`.
 
 
 @dataclass(frozen=True)
@@ -288,7 +288,7 @@ def _heatmap(now: datetime) -> Heatmap:
             key = (weekday, hour)
             capacity = SPACE_COUNT * days_per_weekday - blocked.get(key, 0)
             pct = min(100, round(100 * booked.get(key, 0) / capacity)) if capacity > 0 else 0
-            cells.append(HeatCell(pct=pct, level=-(-pct // 20)))  # ceil(pct / 20): 0, 1..5.
+            cells.append(HeatCell(pct=pct, level=min(9, pct // 10)))
         table.append(HeatRow(label=label, cells=tuple(cells)))
     hours = tuple(f"{hour:02d}" for hour in range(OPEN_HOUR, CLOSE_HOUR))
     return Heatmap(hours=hours, rows=tuple(table))

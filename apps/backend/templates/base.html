@@ -8,10 +8,10 @@
     <link rel="stylesheet" href="{% static 'core/base.css' %}">
     {% block styles %}{% endblock %}
   </head>
-  <body>
-    <aside class="banner" aria-label="Test mode">● Fictional venue · Test mode, no real payments</aside>
+  <body class="{% block body_class %}{% endblock %}">
+    <aside class="banner" aria-label="Test mode"><span class="banner-dot" aria-hidden="true"></span>Fictional venue · Test mode, no real payments</aside>
     {% block header %}{% endblock %}
-    <main class="wrap">
+    <main class="{% block main_class %}wrap{% endblock %}">
       {% block content %}{% endblock %}
     </main>
     {% block scripts %}{% endblock %}

@@ -2,6 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from html import escape
 from html.parser import HTMLParser
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -10,7 +11,7 @@ from django.contrib.auth.models import Group, User
 from django.test import Client
 
 from accounts.roles import Role
-from bookings import holds, pricing, rules
+from bookings import checkin, holds, pricing, rules
 from bookings.holds import Customer
 from bookings.models import Booking, Court, SlotLock
 from bookings.rules import Source, Status
@@ -40,6 +41,21 @@ def cancel_url(reference: str) -> str:
     return f"/dashboard/schedule/booking/{reference}/cancel/"
 
 
+def check_in_url(reference: str) -> str:
+    return f"/dashboard/desk/check-in/{reference}/"
+
+
+def spend_viewer_budget() -> None:
+    """Use up the viewer's write budget for the test client's address, as real writes would."""
+    for _ in range(views.WRITE_LIMIT):
+        ratelimit.hit(
+            "staff_write",
+            "127.0.0.1",
+            limit=views.WRITE_LIMIT,
+            window_seconds=views.WRITE_WINDOW_SECONDS,
+        )
+
+
 def court(code: str) -> Court:
     return Court.objects.get(code=code)
 
@@ -51,7 +67,7 @@ def make_user(role: Role) -> User:
 
 
 def walk_in(
-    code="mp-01", day=TODAY, hour=14, *, sport="badminton", name="", is_demo=False, now=NOW
+    code="mp-01", day=TODAY, hour=14, *, sport="badminton", name="", is_demo=False, now=NOW, hours=1
 ):
     return holds.create_staff_booking(
         source=Source.WALK_IN,
@@ -61,11 +77,27 @@ def walk_in(
         half=None,
         day=day,
         start_hour=hour,
-        hours=1,
+        hours=hours,
         created_by=None,
         customer_name=name,
         is_demo=is_demo,
         now=now,
+    )
+
+
+def basketball(code="bb-1", *, coverage="full", half=None, hour=14, hours=2, name="Juan Dela Cruz"):
+    return holds.create_staff_booking(
+        source=Source.WALK_IN,
+        court=court(code),
+        sport="basketball",
+        coverage=coverage,
+        half=half,
+        day=TODAY,
+        start_hour=hour,
+        hours=hours,
+        created_by=None,
+        customer_name=name,
+        now=NOW,
     )
 
 
@@ -182,28 +214,20 @@ def viewer(client):
 
 
 class Html(HTMLParser):
-    """Start tags with their attributes, plus each `<tbody>` row's cells (tag, attrs)."""
+    """Every start tag with its attributes."""
 
     def __init__(self, html):
         super().__init__()
         self.tags = []
-        self.rows = []
-        self.in_body = False
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        self.tags.append((tag, attrs))
-        if tag == "tbody":
-            self.in_body = True
-        elif self.in_body and tag == "tr":
-            self.rows.append([])
-        elif self.in_body and tag in ("th", "td"):
-            self.rows[-1].append((tag, attrs))
+        self.tags.append((tag, dict(attrs)))
 
-    def handle_endtag(self, tag):
-        if tag == "tbody":
-            self.in_body = False
+
+def with_class(html, name):
+    """The attributes of every element carrying the class `name`, in document order."""
+    return [attrs for _, attrs in Html(html).tags if name in attrs.get("class", "").split()]
 
 
 def assert_csp_safe(html):
@@ -242,10 +266,13 @@ class TestAccess:
         assert booking.status == Status.CONFIRMED
         assert Booking.objects.count() == 1
 
-    def test_schedule_is_in_the_nav(self, owner):
+    def test_schedule_is_in_the_sidebar_nav(self, owner):
         html = owner.get(URL).content.decode()
 
+        assert '<aside class="dash-side"' in html
         assert '<a href="/dashboard/schedule/" aria-current="page">Schedule</a>' in html
+        assert html.count('aria-current="page"') == 1
+        assert html.index('<nav class="dash-nav"') < html.index(">Schedule</a>")
         assert '<div id="toast" class="toast" role="status" aria-live="polite"></div>' in html
 
 
@@ -261,7 +288,9 @@ class TestGrid:
 
         assert len(grid.rows) == 20 == queries.SPACE_COUNT
         assert all(sum(cell.colspan for cell in row.cells) == 16 for row in grid.rows)
-        assert grid.hours[0] == "7 AM" and grid.hours[-1] == "10 PM" and len(grid.hours) == 16
+        heads = grid.hour_heads
+        assert (heads[0].label, heads[0].col) == ("7 AM", 2)
+        assert (heads[-1].label, heads[-1].col, len(heads)) == ("10 PM", 17, 16)
         assert [row.label for row in grid.rows[:3]] == [
             "Basketball Court 1 · Half A",
             "Basketball Court 1 · Half B",
@@ -270,14 +299,39 @@ class TestGrid:
         assert grid.rows[4].label == "Tennis Court 1"
         assert grid.rows[-1].label == "Court 12"
 
-    def test_page_table_has_20_rows_of_16_hour_columns(self, owner):
+    def test_rows_sit_under_three_group_headings(self):
+        grid = build_grid(TODAY, role=Role.OWNER, now=NOW)
+
+        assert [(group.label, group.row) for group in grid.groups] == [
+            ("Basketball · Volleyball", 2),
+            ("Tennis", 7),
+            ("Multi-courts · Badminton & Pickleball", 12),
+        ]
+        # Row 1 is the hour header; a heading row precedes each kind of court.
+        assert [row.grid_row for row in grid.rows] == [*range(3, 7), *range(8, 12), *range(13, 25)]
+        assert (grid.rows[0].name, grid.rows[0].half) == ("Basketball Court 1", "Half A")
+        assert (grid.rows[4].name, grid.rows[4].half) == ("Tennis Court 1", "")
+
+    def test_page_is_one_css_grid_of_20_court_rows(self, owner):
         html = owner.get(URL).content.decode()
 
-        rows = Html(html).rows
-        assert len(rows) == 20
-        for row in rows:
-            assert row[0][0] == "th"
-            assert sum(int(attrs.get("colspan", 1)) for _, attrs in row[1:]) == 16
+        assert [attrs["class"] for attrs in with_class(html, "sg-group")] == [
+            "sg-group r-2",
+            "sg-group r-7",
+            "sg-group r-12",
+        ]
+        assert len(with_class(html, "sg-court")) == 20
+        assert len(with_class(html, "sg-hour")) == 16
+        # Every hour of every row is either a free cell or part of a block: nothing is booked here.
+        assert len(with_class(html, "sg-cell")) == 20 * 16
+        assert with_class(html, "sg-block") == []
+        assert "<table" not in html
+
+    def test_the_page_has_one_h1_and_the_shell_heading(self, owner):
+        html = owner.get(URL).content.decode()
+
+        assert html.count("<h1") == 1
+        assert '<h1 class="dash-heading">Schedule</h1>' in html
 
     def test_full_basketball_booking_appears_in_both_half_rows(self):
         booking = holds.create_staff_booking(
@@ -304,7 +358,7 @@ class TestGrid:
             assert segment.name == "Juan D."
             assert segment.sport == "Basketball"
             assert segment.can_cancel
-            assert segment.css == "slot-walkin"
+            assert segment.block_state == "walk_in"
         assert len(rows[0].cells) == 15
 
     def test_segments_carry_source_status_demo_and_permissions(self):
@@ -329,12 +383,12 @@ class TestGrid:
         grid = build_grid(TODAY, role=Role.VIEWER, now=NOW)
         cells = {cell.reference: cell for row in grid.rows for cell in row.cells if cell.reference}
 
-        assert cells[paid.reference].css == "slot-online"
+        assert cells[paid.reference].block_state == "online"
         assert not cells[paid.reference].can_cancel  # A real visitor's online booking.
         assert cells[demo.reference].is_demo and cells[demo.reference].can_cancel
-        assert cells[hold.reference].css == "slot-online slot-pending"
+        assert cells[hold.reference].block_state == "pending"
         assert cells[hold.reference].status == Status.PENDING
-        assert cells[blocked.reference].css == "slot-block"
+        assert cells[blocked.reference].block_state == "block"
         assert cells[blocked.reference].colspan == 3
         assert cells[blocked.reference].text == "Resurfacing"
         owner_cells = {
@@ -351,7 +405,6 @@ class TestGrid:
         assert [cell.past for cell in cells[:6]] == [True] * 5 + [False]
         assert not any(cell.addable for cell in cells[:5])
         assert all(cell.addable for cell in cells[5:])
-        assert cells[0].css == "slot-past" and cells[5].css == "slot-free"
         assert cells[5].label == "Tennis Court 1, 12 PM, free: add booking"
 
         html = owner.get(URL).content.decode()
@@ -377,7 +430,7 @@ class TestGrid:
 
         assert response.status_code == 200
         assert "<html" not in html and "<h1>" not in html and 'id="panel"' not in html
-        assert 'class="schedule"' in html
+        assert 'class="sg"' in html
         assert "Tuesday 3 November 2026" in html
         assert 'hx-target="#grid"' in html and 'hx-push-url="true"' in html
         assert 'href="/dashboard/schedule/?date=2026-11-02"' in html  # Prev, with a real href.
@@ -415,14 +468,232 @@ class TestGrid:
         assert_csp_safe(html)
         assert html.count("hx-headers=") == 2
         assert '<aside id="panel" class="panel" aria-live="polite"' in html
-        for css in ("slot-online", "slot-walkin", "slot-block", "slot-pending", "slot-past"):
-            assert css in html
+        for state in ("online", "checked_in", "walk_in", "pending", "block", "done"):
+            assert f"sg-swatch st-{state}" in html  # The legend.
+        assert "sg-block st-walk_in" in html
         assert "Dela Cruz" not in html and "Juan D." in html
 
     def test_hx_config_swaps_refusals(self, owner):
         html = owner.get(URL).content.decode()
 
         assert '{"code":"403|429","swap":true,"error":false}' in html
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, "online"),
+        ({"source": "walk_in"}, "walk_in"),
+        ({"checked_in_at": NOW}, "checked_in"),
+        ({"source": "walk_in", "checked_in_at": NOW}, "checked_in"),
+        ({"ends_at": NOW - timedelta(hours=1)}, "done"),
+        # Ended wins over checked in, and over the source.
+        ({"source": "walk_in", "checked_in_at": NOW, "ends_at": NOW}, "done"),
+        ({"status": "pending"}, "pending"),
+        ({"source": "block"}, "block"),
+        ({"source": "block", "ends_at": NOW - timedelta(hours=1)}, "block"),
+    ],
+)
+def test_block_state_follows_status_key(fields, expected):
+    booking = SimpleNamespace(
+        **{
+            "status": "confirmed",
+            "source": "online",
+            "ends_at": NOW + timedelta(hours=1),
+            "checked_in_at": None,
+            **fields,
+        }
+    )
+
+    assert schedule.block_state(booking, NOW) == expected
+
+
+def test_the_grid_line_classes_are_written_out_in_the_stylesheet():
+    css = (Path(forms.__file__).parent / "static/dashboard/dashboard.css").read_text()
+    wanted = (
+        [f".r-{n}" for n in range(2, 27)]
+        + [f".c-{n}" for n in range(2, 18)]
+        + [f".rs-{n}" for n in range(1, 4)]
+        + [f".cs-{n}" for n in range(1, 4)]
+        + [f".now-m-{n}" for n in range(0, 60, 5)]
+    )
+
+    assert [name for name in wanted if f"{name} {{" not in css] == []
+    # The last row any court can take, and the widest hour span, fit the generated classes.
+    assert 2 + 3 + queries.SPACE_COUNT <= 26 and rules.MAX_HOURS <= 3
+
+
+@pytest.mark.django_db
+class TestBlocks:
+    def test_a_full_basketball_booking_is_one_block_over_both_halves(self, owner):
+        booking = basketball()
+
+        (block,) = with_class(owner.get(URL).content.decode(), "sg-block")
+
+        assert set(block["class"].split()) == {
+            "sg-block",
+            "st-walk_in",
+            "r-3",
+            "rs-2",
+            "c-9",
+            "cs-2",
+        }
+        assert block["hx-get"] == booking_url(booking.reference)
+        assert block["hx-target"] == "#panel"
+        # Over both halves it is the court's, not Half A's.
+        assert (
+            block["aria-label"]
+            == "Basketball Court 1, 2 PM to 4 PM, walk-in, Juan Dela Cruz: details"
+        )
+
+    def test_a_half_booking_is_one_row(self, owner):
+        booking = basketball("bb-2", coverage="half", half="B", hour=18, hours=1)
+
+        html = owner.get(URL).content.decode()
+
+        (block,) = with_class(html, "sg-block")
+        assert set(block["class"].split()) == {
+            "sg-block",
+            "st-walk_in",
+            "r-6",
+            "rs-1",
+            "c-13",
+            "cs-1",
+        }
+        assert block["hx-get"] == booking_url(booking.reference)
+        assert block["aria-label"].startswith("Basketball Court 2 · Half B, 6 PM to 7 PM")
+        assert "Basketball · half · " + booking.reference in html
+
+    def test_a_three_hour_booking_spans_three_columns(self, owner):
+        walk_in("tn-1", hour=16, sport="tennis", hours=3)
+
+        (block,) = with_class(owner.get(URL).content.decode(), "sg-block")
+
+        assert {"r-8", "rs-1", "c-11", "cs-3"} <= set(block["class"].split())
+
+    def test_every_booking_is_one_block_in_its_state(self):
+        paid = online("mp-01", hour=8)  # Ended at 9: done.
+        arrived = online("mp-02", hour=12)
+        Booking.objects.filter(pk=arrived.pk).update(checked_in_at=NOW)
+        coming = online("mp-03", hour=19)
+        hold = online("mp-04", hour=15, confirm=False)
+        Booking.objects.filter(pk=hold.pk).update(hold_expires_at=NOW + timedelta(minutes=10))
+        cash = walk_in("mp-05")
+        blocked = holds.create_staff_booking(
+            source=Source.BLOCK,
+            court=court("bb-1"),
+            sport=None,
+            coverage="full",
+            half=None,
+            day=TODAY,
+            start_hour=13,
+            hours=3,
+            created_by=None,
+            note="Resurfacing",
+            now=NOW,
+        )
+
+        blocks = {b.reference: b for b in build_grid(TODAY, role=Role.OWNER, now=NOW).blocks}
+
+        assert {ref: block.state for ref, block in blocks.items()} == {
+            paid.reference: "done",
+            arrived.reference: "checked_in",
+            coming.reference: "online",
+            hold.reference: "pending",
+            cash.reference: "walk_in",
+            blocked.reference: "block",
+        }
+        # A block over a basketball court holds both halves.
+        assert (blocks[blocked.reference].row, blocks[blocked.reference].row_span) == (3, 2)
+        assert blocks[blocked.reference].name == "Resurfacing"
+        assert blocks[blocked.reference].sub == f"Blocked · {blocked.reference}"
+
+    def test_names_are_masked_in_python_for_the_viewer(self):
+        walk_in("mp-01", name="Juan Dela Cruz")
+        walk_in("mp-02", hour=15)
+
+        owner_names = {b.name for b in build_grid(TODAY, role=Role.OWNER, now=NOW).blocks}
+        viewer_names = {b.name for b in build_grid(TODAY, role=Role.VIEWER, now=NOW).blocks}
+
+        assert owner_names == {"Juan Dela Cruz", "Badminton"}
+        assert viewer_names == {"Juan D.", "Badminton"}
+
+    def test_free_cells_are_buttons_unless_past_or_out_of_range(self, owner):
+        walk_in("tn-1", hour=18, sport="tennis")
+
+        grid = build_grid(TODAY, role=Role.OWNER, now=NOW)
+        cells = {(c.row, c.col): c for c in grid.empty_cells}
+
+        assert len(cells) == 20 * 16 - 1
+        assert (8, 13) not in cells  # Tennis Court 1 at 6 PM is booked.
+        free = cells[(8, 12)]
+        assert (free.court_code, free.space, free.hour) == ("tn-1", "F", 17)
+        assert free.addable and not free.past
+        assert free.label == "Tennis Court 1, 5 PM, free: add booking"
+        assert cells[(8, 2)].past and not cells[(8, 2)].addable  # 7 AM has ended.
+
+        html = owner.get(URL).content.decode()
+        assert len(with_class(html, "sg-cell-past")) == 20 * 5  # 7 AM to 11 AM, every row.
+        (button,) = [a for a in with_class(html, "sg-cell") if a.get("aria-label") == free.label]
+        assert button["hx-get"] == (f"{NEW}?court=tn-1&space=F&hour=17&date={TODAY.isoformat()}")
+        assert set(button["class"].split()) == {"sg-cell", "r-8", "c-12"}
+
+    def test_the_viewer_gets_no_buttons_past_the_demo_window(self, viewer):
+        far = (TODAY + timedelta(days=7)).isoformat()
+
+        html = viewer.get(URL, {"date": far}).content.decode()
+
+        assert len(with_class(html, "sg-cell")) == 20 * 16
+        assert all("hx-get" not in a for a in with_class(html, "sg-cell"))
+
+
+@pytest.mark.django_db
+class TestNowMarker:
+    def test_today_has_a_marker_in_the_current_hour(self, owner):
+        html = owner.get(URL).content.decode()
+
+        (marker,) = with_class(html, "sg-now")
+        assert marker["class"] == "sg-now c-7"  # 12 PM: hour - 5.
+        assert '<span class="sg-now-line now-m-0"></span>' in html
+        assert '<span class="sg-now-chip now-m-0">12:00</span>' in html
+        assert [a["class"] for a in with_class(html, "sg-hour-now")] == ["sg-hour c-7 sg-hour-now"]
+        assert len(with_class(html, "sg-hour-past")) == 5  # 7 AM to 11 AM.
+        assert_csp_safe(html)
+
+    @pytest.mark.parametrize(
+        ("minutes", "css", "label"),
+        [
+            (0, "now-m-0", "12:00"),
+            (4, "now-m-0", "12:04"),
+            (48, "now-m-45", "12:48"),
+            (59, "now-m-55", "12:59"),
+        ],
+    )
+    def test_the_marker_sits_in_five_minute_steps(self, minutes, css, label):
+        grid = build_grid(TODAY, role=Role.OWNER, now=NOW + timedelta(minutes=minutes))
+
+        assert (grid.now_col, grid.now_minute_class, grid.now_label) == (7, css, label)
+
+    def test_no_marker_on_another_day(self, owner):
+        for day in ("2026-11-03", "2026-11-01"):
+            html = owner.get(URL, {"date": day}).content.decode()
+
+            assert "sg-now" not in html and "sg-hour-now" not in html
+        grid = build_grid(TODAY + timedelta(days=1), role=Role.OWNER, now=NOW)
+        assert (grid.now_col, grid.now_minute_class, grid.now_label) == (None, "", "")
+
+    def test_no_marker_while_the_venue_is_closed(self):
+        for hour, minute in ((6, 30), (23, 15)):
+            now = datetime(2026, 11, 2, hour, minute, tzinfo=rules.TIME_ZONE)
+
+            assert build_grid(TODAY, role=Role.OWNER, now=now).now_col is None
+
+    def test_a_past_day_has_every_hour_past_and_a_future_day_none(self):
+        past = build_grid(TODAY - timedelta(days=1), role=Role.OWNER, now=NOW)
+        future = build_grid(TODAY + timedelta(days=1), role=Role.OWNER, now=NOW)
+
+        assert all(head.past for head in past.hour_heads)
+        assert not any(head.past for head in future.hour_heads)
 
 
 # --- side panel ---------------------------------------------------------------------------------
@@ -498,6 +769,92 @@ class TestPanel:
         assert owner.get(booking_url("NOPE12345")).status_code == 404
         assert owner.post(cancel_url("NOPE12345")).status_code == 404
 
+    def test_panel_is_a_header_a_key_value_list_and_the_actions(self, owner):
+        booking = walk_in(name="Juan Dela Cruz")
+
+        html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
+
+        assert '<h2 class="sp-title">Booking</h2>' in html
+        assert f'<span class="desk-ref">{booking.reference}</span>' in html
+        assert '<span class="pill pill-confirmed">Confirmed</span>' in html
+        assert '<p class="sp-name">Juan Dela Cruz</p>' in html
+        assert "<dt>Court</dt><dd>Court 1</dd>" in html
+        assert "<dt>Source</dt><dd>Walk-in</dd>" in html
+        assert "Checked in</dt>" not in html
+        assert "<h1" not in html
+        assert_csp_safe(html)
+
+    def test_check_in_is_a_post_to_the_desks_endpoint_returning_to_the_schedule(self, owner):
+        booking = walk_in(name="Juan Dela Cruz")
+
+        html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
+
+        (form,) = with_class(html, "sp-action")
+        assert form["hx-post"] == check_in_url(booking.reference)
+        assert form["action"] == check_in_url(booking.reference) and form["method"] == "post"
+        assert form["hx-target"] == "#grid"
+        assert '<input type="hidden" name="return" value="schedule">' in html
+        assert 'name="csrfmiddlewaretoken"' in html
+        assert ">Check in</button>" in html
+        assert "Cancel booking" in html  # Still offered.
+
+    def test_viewer_has_no_check_in_for_a_real_online_booking(self, viewer):
+        booking = online()
+
+        html = viewer.get(booking_url(booking.reference), headers=HX).content.decode()
+
+        assert "Check in" not in html and check_in_url(booking.reference) not in html
+
+    def test_viewer_has_check_in_for_demo_and_walk_in_bookings(self, viewer):
+        for booking in (online(is_demo=True), walk_in("mp-02")):
+            html = viewer.get(booking_url(booking.reference), headers=HX).content.decode()
+            assert check_in_url(booking.reference) in html
+
+    def test_no_check_in_once_checked_in_ended_or_for_a_block(self, owner):
+        arrived = walk_in("mp-01")
+        Booking.objects.filter(pk=arrived.pk).update(checked_in_at=NOW)
+        ended = online("mp-02", hour=8)
+        blocked = holds.create_staff_booking(
+            source=Source.BLOCK,
+            court=court("tn-1"),
+            sport=None,
+            coverage="full",
+            half=None,
+            day=TODAY,
+            start_hour=13,
+            hours=1,
+            created_by=None,
+            note="Maintenance",
+            now=NOW,
+        )
+
+        for booking in (arrived, ended, blocked):
+            html = owner.get(booking_url(booking.reference), headers=HX).content.decode()
+            assert check_in_url(booking.reference) not in html
+
+        arrived_html = owner.get(booking_url(arrived.reference), headers=HX).content.decode()
+        assert "pill-checked_in" in arrived_html and "Checked in</dt><dd>12:00 PM" in arrived_html
+        assert (
+            "pill-completed" in owner.get(booking_url(ended.reference), headers=HX).content.decode()
+        )
+
+    def test_detail_can_check_in_follows_the_role_permission(self):
+        today = walk_in("mp-01")
+        tomorrow = walk_in("mp-02", day=TODAY + timedelta(days=1))
+        real = online("mp-03")
+
+        assert schedule.booking_detail(today, role=Role.OWNER, now=NOW).can_check_in
+        assert not schedule.booking_detail(tomorrow, role=Role.OWNER, now=NOW).can_check_in
+        assert schedule.booking_detail(real, role=Role.OWNER, now=NOW).can_check_in
+        assert not schedule.booking_detail(real, role=Role.VIEWER, now=NOW).can_check_in
+        assert schedule.booking_detail(today, role=Role.VIEWER, now=NOW).can_check_in
+        detail = schedule.booking_detail(today, role=Role.OWNER, now=NOW)
+        assert (detail.status, detail.status_key, detail.checked_in_clock) == (
+            "Confirmed",
+            "confirmed",
+            "",
+        )
+
 
 # --- cancel -------------------------------------------------------------------------------------
 
@@ -538,7 +895,7 @@ class TestCancel:
         # It was paid, so it is freed as needing a refund.
         assert booking.status == Status.NEEDS_REFUND and booking.cancelled_at == NOW
         assert not SlotLock.objects.filter(booking=booking).exists()
-        assert "<html" not in html and 'class="schedule"' in html
+        assert "<html" not in html and 'class="sg"' in html
         assert booking.reference not in html  # The freed slot is free on the refreshed grid.
         toast = next(a for t, a in Html(html).tags if t == "div" and a.get("id") == "toast")
         assert toast["hx-swap-oob"] == "true" and toast["role"] == "status"
@@ -716,6 +1073,175 @@ def test_cancel_booking_judges_the_locked_row(db):
 
 
 @pytest.mark.django_db
+class TestPanelCheckIn:
+    def test_owner_checks_in_and_the_grid_refreshes_with_a_toast(self, owner):
+        booking = walk_in(name="Juan Dela Cruz")
+
+        response = owner.post(check_in_url(booking.reference), {"return": "schedule"}, headers=HX)
+        html = response.content.decode()
+
+        assert response.status_code == 200
+        assert "<html" not in html and 'class="sg"' in html
+        assert "no-store" in response["Cache-Control"]
+        assert (
+            '<div id="toast" class="toast" role="status" aria-live="polite" hx-swap-oob="true">'
+            '<span aria-hidden="true">✓ </span>Juan Dela Cruz checked in · Court 1</div>'
+        ) in html
+        assert (
+            '<aside id="panel" class="panel" aria-live="polite" aria-label="Booking" hx-swap-oob'
+            in html
+        )
+        (block,) = with_class(html, "sg-block")
+        assert "st-checked_in" in block["class"].split()
+        booking.refresh_from_db()
+        assert booking.checked_in_at == NOW
+        assert booking.checked_in_by == make_user(Role.OWNER)
+        assert_csp_safe(html)
+
+    def test_the_toast_is_masked_for_the_viewer_and_names_the_court(self, viewer):
+        booking = walk_in("tn-2", sport="tennis", name="Juan Dela Cruz")
+
+        response = viewer.post(check_in_url(booking.reference), {"return": "schedule"}, headers=HX)
+
+        html = response.content.decode()
+        assert "Juan D. checked in · Tennis Court 2</div>" in html
+        assert "Dela Cruz" not in html
+        assert_csp_safe(html)
+
+    def test_the_toast_falls_back_to_the_reference_without_a_name(self, owner):
+        booking = walk_in()
+
+        html = owner.post(
+            check_in_url(booking.reference), {"return": "schedule"}, headers=HX
+        ).content.decode()
+
+        assert f"{booking.reference} checked in · Court 1</div>" in html
+
+    def test_without_htmx_it_redirects_to_the_bookings_day(self, owner):
+        booking = walk_in()
+
+        response = owner.post(check_in_url(booking.reference), {"return": "schedule"})
+
+        assert response.status_code == 303
+        assert response["Location"] == f"/dashboard/schedule/?date={TODAY.isoformat()}"
+        booking.refresh_from_db()
+        assert booking.checked_in_at == NOW
+
+    def test_checking_in_twice_is_a_no_op_success(self, owner):
+        booking = walk_in(name="Juan Dela Cruz")
+        earlier = NOW - timedelta(minutes=5)
+        Booking.objects.filter(pk=booking.pk).update(checked_in_at=earlier)
+
+        response = owner.post(check_in_url(booking.reference), {"return": "schedule"}, headers=HX)
+
+        assert response.status_code == 200
+        assert "Juan Dela Cruz checked in · Court 1" in response.content.decode()
+        booking.refresh_from_db()
+        assert booking.checked_in_at == earlier and booking.checked_in_by is None
+
+    def test_return_detail_goes_back_to_the_detail_page(self, owner):
+        booking = walk_in()
+
+        response = owner.post(check_in_url(booking.reference), {"return": "detail"}, headers=HX)
+
+        assert response.status_code == 200 and response.content == b""
+        assert response["HX-Redirect"] == f"/dashboard/bookings/{booking.reference}/"
+        booking.refresh_from_db()
+        assert booking.checked_in_at == NOW
+
+    def test_return_detail_without_htmx_is_a_303(self, owner):
+        booking = walk_in()
+
+        response = owner.post(check_in_url(booking.reference), {"return": "detail"})
+
+        assert response.status_code == 303
+        assert response["Location"] == f"/dashboard/bookings/{booking.reference}/"
+        booking.refresh_from_db()
+        assert booking.checked_in_at == NOW
+
+    @pytest.mark.parametrize("return_to", ["schedule", "detail"])
+    def test_viewer_cannot_check_in_a_real_online_booking(self, viewer, return_to):
+        booking = online()
+
+        response = viewer.post(check_in_url(booking.reference), {"return": return_to}, headers=HX)
+        html = response.content.decode()
+
+        assert response.status_code == 403
+        assert escape(views.CANT_CHECK_IN) in html
+        assert response["HX-Retarget"] == "#panel" and response["HX-Reswap"] == "innerHTML"
+        assert "<html" not in html and 'id="desk"' not in html
+        assert_csp_safe(html)
+        booking.refresh_from_db()
+        assert booking.checked_in_at is None
+
+    @pytest.mark.parametrize("return_to", ["schedule", "detail"])
+    def test_the_viewer_budget_refuses_with_429_in_the_panel(self, viewer, return_to):
+        booking = walk_in()
+        spend_viewer_budget()
+
+        response = viewer.post(check_in_url(booking.reference), {"return": return_to}, headers=HX)
+
+        assert response.status_code == 429
+        assert views.DEMO_LIMIT in response.content.decode()
+        assert response["HX-Retarget"] == "#panel"
+        booking.refresh_from_db()
+        assert booking.checked_in_at is None
+
+    @pytest.mark.parametrize(
+        ("code", "message"),
+        [
+            ("not_confirmed", views.CHECK_IN_ERRORS["not_confirmed"]),
+            ("ended", views.CHECK_IN_ERRORS["ended"]),
+            ("something_else", views.CANT_CHECK_IN),
+        ],
+    )
+    def test_a_check_in_error_is_shown_in_the_panel(self, owner, monkeypatch, code, message):
+        booking = walk_in()
+
+        def refuse(*args, **kwargs):
+            raise checkin.CheckInError(code)
+
+        monkeypatch.setattr(checkin, "check_in", refuse)
+
+        response = owner.post(check_in_url(booking.reference), {"return": "schedule"}, headers=HX)
+
+        assert response.status_code == 403
+        assert escape(message) in response.content.decode()
+        assert response["HX-Retarget"] == "#panel"
+
+    def test_a_refusal_without_htmx_is_a_full_page(self, viewer):
+        booking = online()
+
+        response = viewer.post(check_in_url(booking.reference), {"return": "schedule"})
+        html = response.content.decode()
+
+        assert response.status_code == 403
+        assert BANNER in html and "<html" in html and html.count("<h1") == 1
+        assert escape(views.CANT_CHECK_IN) in html
+
+    def test_without_a_known_return_the_desk_still_answers(self, viewer):
+        booking = online()
+
+        for data in ({}, {"return": "elsewhere"}):
+            response = viewer.post(check_in_url(booking.reference), data, headers=HX)
+
+            assert response.status_code == 403
+            assert response["HX-Retarget"] == "#desk"
+
+    def test_anonymous_cannot_check_in_from_the_panel(self, client):
+        booking = walk_in()
+
+        response = client.post(check_in_url(booking.reference), {"return": "schedule"})
+
+        assert response.status_code == 302
+        booking.refresh_from_db()
+        assert booking.checked_in_at is None
+
+    def test_unknown_reference_is_a_404(self, owner):
+        assert owner.post(check_in_url("KC-ZZZZZZ"), {"return": "schedule"}).status_code == 404
+
+
+@pytest.mark.django_db
 class TestNewPanel:
     def test_prefills_the_clicked_cell(self, viewer):
         response = viewer.get(
@@ -751,6 +1277,27 @@ class TestNewPanel:
 
         assert '<input type="text" name="note"' in html and '<select name="note"' not in html
 
+    def test_the_type_is_a_segmented_control_and_the_form_is_restyled(self, owner):
+        html = owner.get(
+            NEW, {"court": "tn-1", "space": "F", "hour": "9"}, headers=HX
+        ).content.decode()
+
+        assert html.count('<div class="seg">') == 1
+        assert '<label><input type="radio" name="kind" value="walk_in"' in html
+        assert 'value="walk_in" id="id_kind_0" required checked>Walk-in</label>' in html
+        assert 'name="kind" value="block"' in html
+        assert "A block (maintenance, an event) takes the whole court and needs a note." in html
+        assert 'class="btn btn-dark sf-submit"' in html
+        assert [a["class"] for a in with_class(html, "field")] == [
+            "field sf-sport",
+            "field sf-start_hour",
+            "field sf-hours",
+            "field sf-customer_name",
+            "field sf-note",
+        ]
+        assert "<h1" not in html
+        assert_csp_safe(html)
+
     def test_non_basketball_has_no_half_fields(self, owner):
         html = owner.get(
             NEW, {"court": "tn-1", "space": "F", "hour": "9"}, headers=HX
@@ -780,7 +1327,7 @@ class TestCreate:
         assert booking.customer_name == "Juan Dela Cruz"
         assert not booking.is_demo
         assert SlotLock.objects.filter(booking=booking).count() == 2
-        assert 'class="schedule"' in html and booking.reference in html
+        assert 'class="sg"' in html and booking.reference in html
         assert "Booking added." in html
 
     def test_second_walk_in_on_the_same_cell_is_just_taken(self, owner):

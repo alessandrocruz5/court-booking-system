@@ -2,149 +2,162 @@
 {% comment %}
 Every figure arrives from `dashboard.queries.overview()`, already masked for the viewer's role.
 Bar widths and heatmap shades are CSS classes (`w-<n>`, `heat-<n>`), so the page needs no inline
-styles or scripts.
+styles or scripts. The shell owns the one H1 (`dashboard_heading`).
+
+Stat cards: the spec's 7-day bookings, walk-ins, utilization, peak-hours and average-booking figures
+have no source in `queries.overview()`, so the cards show what it does return (7-day revenue, and
+today's bookings, utilization and holds).
 {% endcomment %}
 {% block dashboard_title %}Overview{% endblock %}
+{% block dashboard_heading %}Overview{% endblock %}
 
 {% block dashboard_content %}
-  <h1>Overview</h1>
-
-  {% if overview.alerts.needs_refund %}
-    {% with n=overview.alerts.needs_refund %}
-      <p role="status" class="alert alert-error">
-        {% if n == 1 %}1 paid booking needs{% else %}{{ n }} paid bookings need{% endif %} a refund in the PayMongo dashboard (test mode).
-      </p>
-    {% endwith %}
-  {% endif %}
-
-  <section aria-labelledby="today-heading" class="stack-sm">
-    <h2 id="today-heading">Today</h2>
-    <dl class="kpis">
-      <div class="card kpi">
-        <dt>Bookings</dt>
-        <dd>{{ overview.today.bookings }}</dd>
-      </div>
-      <div class="card kpi">
-        <dt>Revenue</dt>
-        <dd>{{ overview.today.revenue_display }}</dd>
-      </div>
-      <div class="card kpi">
-        <dt>Utilization</dt>
-        <dd>{{ overview.today.utilization_pct|floatformat:"-1" }}%</dd>
-        <dd class="note">{{ overview.today.booked_space_hours }} of {{ overview.today.capacity_space_hours }} space-hours</dd>
-      </div>
-      <div class="card kpi">
-        <dt>Active holds</dt>
-        <dd>{{ overview.alerts.active_holds }}</dd>
-        <dd class="note">Unpaid, held for {{ overview.alerts.hold_minutes }} minutes</dd>
-      </div>
-    </dl>
-  </section>
-
-  <section aria-labelledby="revenue-heading" class="stack-sm">
-    <h2 id="revenue-heading">Revenue</h2>
-    <div class="table-scroll">
-      <table class="data">
-        <caption class="note">Confirmed online and walk-in bookings by start time. Walk-ins are cash, with no fee.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Period</th>
-            <th scope="col" class="num">Gross</th>
-            <th scope="col" class="num">Fees</th>
-            <th scope="col" class="num">Net</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row">Last 7 days</th>
-            <td class="num">{{ overview.revenue_7d.gross_display }}</td>
-            <td class="num">{{ overview.revenue_7d.fees_display }}</td>
-            <td class="num">{{ overview.revenue_7d.net_display }}</td>
-          </tr>
-          <tr>
-            <th scope="row">Last 30 days</th>
-            <td class="num">{{ overview.revenue_30d.gross_display }}</td>
-            <td class="num">{{ overview.revenue_30d.fees_display }}</td>
-            <td class="num">{{ overview.revenue_30d.net_display }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section aria-labelledby="sport-heading" class="stack-sm">
-    <h2 id="sport-heading">Revenue by sport, last 30 days</h2>
-    {% if overview.by_sport_30d %}
-      <ul class="bars">
-        {% for row in overview.by_sport_30d %}
-          <li class="bar-row">
-            <span class="bar-label">{{ row.label }}</span>
-            <span class="bar-track" aria-hidden="true"><span class="bar w-{{ row.width }}"></span></span>
-            <span class="bar-value">{{ row.gross_display }} <span class="note">· {{ row.bookings }} booking{{ row.bookings|pluralize }}</span></span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="note">No bookings in the last 30 days.</p>
+  <div class="ov">
+    {% if overview.alerts.needs_refund %}
+      {% with n=overview.alerts.needs_refund %}
+        <p role="status" class="alert alert-error">
+          {% if n == 1 %}1 paid booking needs{% else %}{{ n }} paid bookings need{% endif %} a refund in the PayMongo dashboard (test mode).
+        </p>
+      {% endwith %}
     {% endif %}
-  </section>
 
-  <section aria-labelledby="heatmap-heading" class="stack-sm">
-    <h2 id="heatmap-heading">Utilization by weekday and hour</h2>
-    <div class="table-scroll">
-      <table class="heatmap">
-        <caption class="note">Share of space-hours booked over the last 28 days, by hour of the day (Manila time). Darker is busier.</caption>
-        <thead>
-          <tr>
-            <td></td>
-            {% for hour in overview.heatmap.hours %}
-              <th scope="col">{{ hour }}</th>
+    <section aria-labelledby="stats-heading">
+      <h2 id="stats-heading" class="visually-hidden">At a glance</h2>
+      <div class="ov-stats">
+        <div class="stat">
+          <p class="stat-label">Revenue · 7 days</p>
+          <p class="stat-value">{{ overview.revenue_7d.gross_display }}</p>
+          <p class="stat-sub">Net {{ overview.revenue_7d.net_display }} after fees</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">Bookings · today</p>
+          <p class="stat-value">{{ overview.today.bookings }}</p>
+          <p class="stat-sub">{{ overview.today.revenue_display }} revenue</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">Utilization · today</p>
+          <p class="stat-value">{{ overview.today.utilization_pct|floatformat:"-1" }}%</p>
+          <p class="stat-sub">{{ overview.today.booked_space_hours }} of {{ overview.today.capacity_space_hours }} space-hours</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">Active holds</p>
+          <p class="stat-value">{{ overview.alerts.active_holds }}</p>
+          <p class="stat-sub">Unpaid, held for {{ overview.alerts.hold_minutes }} minutes</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="ov-cols">
+      <section class="card ov-card" aria-labelledby="sport-heading">
+        <div class="ov-head">
+          <h2 id="sport-heading" class="ov-title">Revenue by sport <span class="ov-meta">· last 30 days</span></h2>
+        </div>
+        {% if overview.by_sport_30d %}
+          <ul class="ov-bars">
+            {% for row in overview.by_sport_30d %}
+              <li>
+                <p class="ov-bar-top">
+                  <span class="ov-bar-label">{{ row.label }}</span>
+                  <span class="ov-bar-value">{{ row.gross_display }} <span class="ov-bar-count">· {{ row.bookings }} booking{{ row.bookings|pluralize }}</span></span>
+                </p>
+                <span class="ov-track" aria-hidden="true"><span class="ov-fill ov-fill-{{ row.sport }} w-{{ row.width }}"></span></span>
+              </li>
             {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in overview.heatmap.rows %}
-            <tr>
-              <th scope="row">{{ row.label }}</th>
-              {% for cell in row.cells %}
-                <td class="heat-{{ cell.level }}" title="{{ cell.pct }}%">{{ cell.pct }}</td>
-              {% endfor %}
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+          </ul>
+        {% else %}
+          <p class="note">No bookings in the last 30 days.</p>
+        {% endif %}
 
-  <section aria-labelledby="upcoming-heading" class="stack-sm">
-    <h2 id="upcoming-heading">Next 3 hours</h2>
-    {% if overview.upcoming %}
-      <div class="table-scroll">
-        <table class="data">
+        <table class="ov-rev">
+          <caption>Confirmed online and walk-in bookings by start time. Walk-ins are cash, with no fee.</caption>
           <thead>
             <tr>
-              <th scope="col">Time</th>
-              <th scope="col">Court</th>
-              <th scope="col">Sport</th>
-              <th scope="col">Source</th>
-              <th scope="col">Customer</th>
+              <th scope="col">Period</th>
+              <th scope="col">Gross</th>
+              <th scope="col">Fees</th>
+              <th scope="col">Net</th>
             </tr>
           </thead>
           <tbody>
-            {% for row in overview.upcoming %}
-              <tr>
-                <th scope="row">{{ row.when }}</th>
-                <td>{{ row.court }}{% if row.coverage != "Full court" %} · {{ row.coverage }}{% endif %}</td>
-                <td>{{ row.sport }}</td>
-                <td>{{ row.source }}</td>
-                <td>{{ row.name|default:"—" }}</td>
-              </tr>
-            {% endfor %}
+            <tr>
+              <th scope="row">Last 7 days</th>
+              <td>{{ overview.revenue_7d.gross_display }}</td>
+              <td>{{ overview.revenue_7d.fees_display }}</td>
+              <td>{{ overview.revenue_7d.net_display }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Last 30 days</th>
+              <td>{{ overview.revenue_30d.gross_display }}</td>
+              <td>{{ overview.revenue_30d.fees_display }}</td>
+              <td>{{ overview.revenue_30d.net_display }}</td>
+            </tr>
           </tbody>
         </table>
+      </section>
+
+      <section class="card ov-card" aria-labelledby="heatmap-heading">
+        <div class="ov-head">
+          <h2 id="heatmap-heading" class="ov-title">Utilization by weekday &amp; hour</h2>
+          <p class="ov-meta">Last 28 days · darker is busier</p>
+        </div>
+        <div class="ov-scroll">
+          <table class="heatmap">
+            <caption class="visually-hidden">Share of space-hours booked over the last 28 days, by hour of the day (Manila time), in percent. Darker is busier.</caption>
+            <thead>
+              <tr>
+                <th scope="col"><span class="visually-hidden">Weekday</span></th>
+                {% for hour in overview.heatmap.hours %}
+                  <th scope="col">{{ hour }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in overview.heatmap.rows %}
+                <tr>
+                  <th scope="row">{{ row.label }}</th>
+                  {% for cell in row.cells %}
+                    <td class="heat-{{ cell.level }}" title="{{ cell.pct }}%">{{ cell.pct }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="card ov-card" aria-labelledby="upcoming-heading">
+      <div class="ov-head">
+        <h2 id="upcoming-heading" class="ov-title">Next 3 hours</h2>
       </div>
-    {% else %}
-      <p class="note">Nothing starts in the next 3 hours.</p>
-    {% endif %}
-  </section>
+      {% if overview.upcoming %}
+        <div class="ov-scroll">
+          <table class="ov-table">
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Court</th>
+                <th scope="col">Sport</th>
+                <th scope="col">Source</th>
+                <th scope="col">Customer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in overview.upcoming %}
+                <tr>
+                  <th scope="row">{{ row.when }}</th>
+                  <td>{{ row.court }}{% if row.coverage != "Full court" %} · {{ row.coverage }}{% endif %}</td>
+                  <td>{{ row.sport }}</td>
+                  <td>{{ row.source }}</td>
+                  <td>{{ row.name|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="note">Nothing starts in the next 3 hours.</p>
+      {% endif %}
+    </section>
+  </div>
 {% endblock %}

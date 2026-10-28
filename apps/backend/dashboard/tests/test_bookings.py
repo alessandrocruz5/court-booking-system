@@ -39,6 +39,10 @@ def cancel_url(reference: str) -> str:
     return f"/dashboard/schedule/booking/{reference}/cancel/"
 
 
+def check_in_url(reference: str) -> str:
+    return f"/dashboard/desk/check-in/{reference}/"
+
+
 def make_user(role: Role) -> User:
     user, _ = User.objects.get_or_create(username=f"{role}@example.com")
     user.groups.add(Group.objects.get_or_create(name=role)[0])
@@ -131,6 +135,13 @@ class Tags(HTMLParser):
         self.tags = []
         self.feed(html)
 
+    def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, attrs))
+
+
+def h1s(html: str) -> int:
+    return [tag for tag, _ in Tags(html).tags].count("h1")
+
 
 def references(html: str) -> list[str]:
     """The booking references the table lists, in order (the cards repeat them, so only the
@@ -138,7 +149,7 @@ def references(html: str) -> list[str]:
     if 'class="table-scroll bk-table"' not in html:
         return []
     table = html.split('class="table-scroll bk-table"', 1)[1].split("</table>", 1)[0]
-    return re.findall(r'<th scope="row"><a href="/dashboard/bookings/([^/]+)/', table)
+    return re.findall(r'<th scope="row"><a [^>]*href="/dashboard/bookings/([^/]+)/', table)
 
 
 def listed(client, **params) -> list[str]:
@@ -149,7 +160,6 @@ def listed(client, **params) -> list[str]:
 
 def assert_csp_safe(html):
     tags = Tags(html).tags
-    assert [attrs for tag, attrs in tags if tag == "script" and ("src", None) in attrs] == []
     assert not [
         name
         for _, attrs in tags
@@ -181,11 +191,15 @@ class TestAccess:
         assert response["HX-Redirect"] == "/dashboard/login/"
         assert response.content == b""
 
-    def test_bookings_is_in_the_nav(self, owner):
+    def test_bookings_is_in_the_sidebar_nav(self, owner):
         html = owner.get(URL).content.decode()
 
+        assert '<aside class="dash-side"' in html
         assert '<a href="/dashboard/bookings/" aria-current="page">Bookings</a>' in html
-        assert html.index(">Schedule</a>") < html.index(">Bookings</a>")
+        schedule, bookings = html.index(">Schedule</a>"), html.index(">Bookings</a>")
+        assert schedule < bookings < html.index(">Overview</a>")
+        assert html.index('<nav class="dash-nav"') < html.index(">Bookings</a>")
+        assert html.index(">Overview</a>") < html.index('action="/dashboard/logout/"')
 
     def test_page_is_csp_safe(self, viewer):
         make()
@@ -348,6 +362,44 @@ class TestFilters:
         assert listed(owner, status="needs_refund") == ["KC-T00003"]
         assert len(listed(owner)) == 3
 
+    def test_checked_in_filter_lists_only_checked_in_bookings(self, owner):
+        make("KC-T00001", hour=14, checked_in_at=NOW)  # Checked in, still on court.
+        make("KC-T00002", hour=15)  # Confirmed, not checked in.
+        make("KC-T00003", hour=8, checked_in_at=NOW - timedelta(hours=4))  # Ended: completed.
+        make("KC-T00004", hour=16, status=Status.CANCELLED, checked_in_at=NOW)  # Cancelled later.
+
+        response = owner.get(URL, {"status": "checked_in"})
+        html = response.content.decode()
+
+        assert references(html) == ["KC-T00001"]
+        assert "Showing 1 of 1 booking" in html
+        assert html.count('<span class="pill pill-checked_in">Checked in</span>') == 2
+        assert listed(owner, status="completed") == ["KC-T00003"]
+        # Plain `confirmed` still means every confirmed booking: the derived filters are additive.
+        assert sorted(listed(owner, status="confirmed")) == ["KC-T00001", "KC-T00002", "KC-T00003"]
+
+    def test_the_status_segments_are_radios_over_the_status_param(self, owner):
+        make()
+        segment = r'<input type="radio" name="status" value="([^"]*)"( checked)?>'
+
+        html = owner.get(URL, {"status": "checked_in"}).content.decode()
+        radios = re.findall(segment, html)
+
+        assert 'role="radiogroup"' in html
+        assert [value for value, _ in radios] == ["", *(v for v, _ in queries.STATUS_CHOICES)]
+        assert {"checked_in", "completed", "needs_refund"} <= {value for value, _ in radios}
+        assert [value for value, checked in radios if checked] == ["checked_in"]
+        # Nothing selected means "All" is the checked one; a bad value falls back to it too.
+        for params in ({}, {"status": "bogus"}):
+            radios = re.findall(segment, owner.get(URL, params).content.decode())
+            assert [value for value, checked in radios if checked] == [""]
+
+    def test_the_segments_work_without_js_through_the_get_form(self, owner):
+        html = owner.get(URL).content.decode()
+        form = html.split('<form class="bk-toolbar"', 1)[1].split("</form>", 1)[0]
+
+        assert 'type="radio" name="status"' in form and 'type="submit"' in form
+
     def test_sport_filter(self, owner):
         make("KC-T00001", sport="badminton")
         make("KC-T00002", sport="pickleball", hour=15)
@@ -440,7 +492,7 @@ class TestPagination:
         assert len(first) == 25 and len(second) == 5
         assert not set(first) & set(second)
         html = owner.get(URL, {"page": 2}).content.decode()
-        assert "Showing 26–30 of 30 bookings." in html
+        assert "Showing 5 of 30 bookings" in html
         assert "Page 2 of 2" in html
 
     def test_bad_page_shows_page_one(self, owner):
@@ -475,7 +527,7 @@ class TestPagination:
     def test_the_filter_form_is_a_get_form_with_htmx(self, owner):
         html = owner.get(URL).content.decode()
 
-        form = html.split('<form class="card filters"', 1)[1].split(">", 1)[0]
+        form = html.split('<form class="bk-toolbar"', 1)[1].split(">", 1)[0]
         assert 'method="get"' in form and 'action="/dashboard/bookings/"' in form
         assert 'hx-get="/dashboard/bookings/"' in form
         assert 'hx-trigger="change, keyup changed delay:300ms from:#q"' in form
@@ -495,8 +547,8 @@ class TestHtmx:
 
         assert "<html" in full and 'name="q"' in full
         assert "<html" not in partial and 'name="q"' not in partial
-        assert "dash-nav" not in partial
-        assert "Showing 1–1 of 1 booking." in partial
+        assert "dash-side" not in partial and "dash-nav" not in partial
+        assert "Showing 1 of 1 booking" in partial
         assert references(partial) == ["KC-T00001"]
 
     def test_a_history_restore_gets_the_whole_page(self, owner):
@@ -517,16 +569,75 @@ class TestHtmx:
 
 @pytest.mark.django_db
 class TestRows:
-    def test_status_badges_source_tags_and_demo_tag(self, owner):
-        make("KC-T00001", is_demo=True)
-        make("KC-T00002", status=Status.NEEDS_REFUND, source=Source.WALK_IN, hour=15)
+    def test_pills_follow_the_derived_status(self, owner):
+        make("KC-T00001", hour=14)
+        make("KC-T00002", hour=15, checked_in_at=NOW)
+        make("KC-T00003", hour=8)  # Over at NOW.
+        make("KC-T00004", hour=16, status=Status.NEEDS_REFUND, source=Source.WALK_IN)
+        make(
+            "KC-T00005",
+            hour=17,
+            source=Source.BLOCK,
+            sport=None,
+            price_centavos=0,
+            customer_name="",
+            customer_email=None,
+            customer_mobile=None,
+        )
 
         html = owner.get(URL).content.decode()
 
-        assert "badge badge-confirmed" in html and "badge badge-needs_refund" in html
-        assert "tag tag-online" in html and "tag tag-walk_in" in html
+        for key, label in (
+            ("confirmed", Status.CONFIRMED.label),
+            ("checked_in", "Checked in"),
+            ("completed", "Completed"),
+            ("needs_refund", Status.NEEDS_REFUND.label),
+            ("block", "Blocked"),
+        ):
+            # The table row and the card.
+            assert html.count(f'<span class="pill pill-{key}">{label}</span>') == 2, key
+        assert 'class="badge' not in html and "badge-" not in html  # The old status badges.
+
+    def test_source_and_demo_tag(self, owner):
+        make("KC-T00001", is_demo=True)
+        make("KC-T00002", source=Source.WALK_IN, hour=15)
+
+        html = owner.get(URL).content.decode()
+
+        assert html.count('<span class="bk-source">Online</span>') == 2
+        assert html.count('<span class="bk-source">Walk-in</span>') == 2
         assert html.count('tag tag-demo">Demo') == 2  # The table row and the card.
         assert html.count("Demo</span>") == 2
+
+    def test_the_court_column_has_the_sport_tag(self, owner):
+        make("KC-T00001", sport="badminton")
+        make("KC-T00002", sport="pickleball", hour=15)
+
+        html = owner.get(URL).content.decode()
+
+        assert html.count('<span class="tag tag-badminton"></span>') == 2
+        assert html.count('<span class="tag tag-pickleball"></span>') == 2
+
+    def test_each_row_is_one_link_to_the_booking_with_the_lists_query(self, owner):
+        make("KC-T00001")
+        make("KC-T00002", hour=15)
+
+        html = owner.get(URL, {"sort": "starts_at"}).content.decode()
+
+        rows = re.findall(r'<tr class="bk-row">(.*?)</tr>', html, re.S)
+        assert len(rows) == 2
+        assert all(row.count("<a ") == 1 for row in rows)
+        assert 'href="/dashboard/bookings/KC-T00001/?sort=starts_at"' in rows[0]
+
+    def test_the_footer_counts_the_rows_shown_of_the_total(self, owner):
+        for number in range(27):
+            make(f"KC-T{number:05d}", day=TODAY - timedelta(days=number))
+
+        first = owner.get(URL).content.decode()
+        second = owner.get(URL, {"page": 2}).content.decode()
+
+        assert "Showing 25 of 27 bookings" in first
+        assert "Showing 2 of 27 bookings" in second
 
     def test_a_block_row_has_no_price_or_customer(self, owner):
         make(
@@ -544,7 +655,9 @@ class TestRows:
         ).rows
 
         assert (row.price, row.name, row.email, row.sport) == ("", "", "", "")
-        assert "tag tag-block" in owner.get(URL).content.decode()
+        html = owner.get(URL).content.decode()
+        assert '<span class="tag tag-block"></span>' in html  # The court column's square.
+        assert '<span class="pill pill-block">Blocked</span>' in html
 
     def test_the_table_and_the_cards_both_render(self, owner):
         make()
@@ -553,6 +666,26 @@ class TestRows:
 
         assert 'class="table-scroll bk-table"' in html and 'class="bk-cards"' in html
         assert html.count('href="/dashboard/bookings/KC-T00001/"') == 2
+
+
+@pytest.mark.django_db
+class TestHeading:
+    def test_the_list_has_exactly_one_h1(self, owner):
+        make()
+
+        for params in ({}, {"q": "nobody"}):
+            html = owner.get(URL, params).content.decode()
+            assert h1s(html) == 1
+            assert '<h1 class="dash-heading">Bookings</h1>' in html
+        assert h1s(owner.get(URL, headers=HX).content.decode()) == 0
+
+    def test_the_detail_has_exactly_one_h1(self, owner):
+        make()
+
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        assert h1s(html) == 1
+        assert '<h1 class="dash-heading">Booking KC-T00001</h1>' in html
 
 
 # --- the detail page ----------------------------------------------------------------------------
@@ -681,6 +814,75 @@ class TestDetail:
         make()
 
         assert 'id="panel"' in owner.get(detail_url("KC-T00001")).content.decode()
+
+
+@pytest.mark.django_db
+class TestCheckInButton:
+    def test_present_for_the_owner_on_an_eligible_booking(self, owner):
+        make()
+
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        (tag,) = re.findall(rf'<form[^>]*action="{check_in_url("KC-T00001")}"[^>]*>', html)
+        assert 'method="post"' in tag
+        form = html.split(tag, 1)[1].split("</form>", 1)[0]
+        assert 'name="return" value="detail"' in form
+        assert 'name="csrfmiddlewaretoken"' in form
+        assert ">Check in</button>" in form
+        assert queries.get_booking(role=Role.OWNER, reference="KC-T00001", now=NOW).can_check_in
+
+    def test_absent_for_the_viewer_on_a_real_online_booking(self, viewer):
+        booking = online()
+
+        html = viewer.get(detail_url(booking.reference)).content.decode()
+
+        assert not queries.get_booking(
+            role=Role.VIEWER, reference=booking.reference, now=NOW
+        ).can_check_in
+        assert check_in_url(booking.reference) not in html and "Check in" not in html
+
+    def test_present_for_the_viewer_on_a_demo_online_booking_and_a_walk_in(self, viewer):
+        for booking in (online(is_demo=True), walk_in("mp-03")):
+            html = viewer.get(detail_url(booking.reference)).content.decode()
+            assert f'action="{check_in_url(booking.reference)}"' in html
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"checked_in_at": NOW},  # Already checked in.
+            {"hour": 8},  # Over at NOW.
+            {"day": TODAY + timedelta(days=1)},  # Not today.
+            {"status": Status.CANCELLED},
+            {"status": Status.PENDING, "hold_expires_at": NOW + timedelta(minutes=20)},
+            {"source": Source.BLOCK, "sport": None, "price_centavos": 0},
+        ],
+        ids=["checked_in", "ended", "tomorrow", "cancelled", "pending", "block"],
+    )
+    def test_absent_when_the_booking_cannot_be_checked_in(self, owner, fields):
+        make(**fields)
+
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        assert check_in_url("KC-T00001") not in html and "Check in" not in html
+
+    def test_a_checked_in_booking_shows_when_in_the_record(self, owner):
+        make(checked_in_at=NOW)
+
+        html = owner.get(detail_url("KC-T00001")).content.decode()
+
+        assert '<span class="pill pill-checked_in">Checked in</span>' in html
+        assert "<dt>Checked in</dt><dd>12:00 PM</dd>" in html
+
+    def test_posting_the_form_checks_in_and_returns_to_the_detail_page(self, owner):
+        make()
+
+        response = owner.post(check_in_url("KC-T00001"), {"return": "detail"})
+
+        assert response.status_code == 303
+        assert response["Location"] == detail_url("KC-T00001")
+        followed = owner.get(response["Location"]).content.decode()
+        assert '<span class="pill pill-checked_in">Checked in</span>' in followed
+        assert check_in_url("KC-T00001") not in followed
 
 
 @pytest.mark.django_db
