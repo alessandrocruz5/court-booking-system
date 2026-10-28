@@ -32,7 +32,7 @@ export function CopyReference({ reference }: { reference: string }) {
     <button
       type="button"
       onClick={copy}
-      className="inline-flex min-h-11 cursor-pointer items-center rounded-lg border-[1.5px] border-ink-3 bg-transparent px-3.5 text-sm font-bold text-line-soft hover:border-slate-4"
+      className="inline-flex min-h-11 cursor-pointer items-center focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court rounded-lg border-[1.5px] border-ink-3 bg-transparent px-3.5 text-sm font-bold text-line-soft hover:border-slate-4"
     >
       <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
     </button>

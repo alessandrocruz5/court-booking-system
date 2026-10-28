@@ -136,7 +136,9 @@ export default async function BookPage({
               </Suspense>
             ) : (
               <p className="m-0 text-[15px] text-slate-5">
-                Pick a sport, a day and a start time first.
+                {sport && params.start !== undefined
+                  ? "That start time is no longer free. Pick another one."
+                  : "Pick a sport, a day and a start time first."}
               </p>
             )}
           </StepCard>

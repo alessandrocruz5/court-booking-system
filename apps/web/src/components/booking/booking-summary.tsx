@@ -10,7 +10,7 @@ type Props = { catalog: Catalog; params: BookingParams; date: string };
 type Found = { courtName: string; priceCentavos: number };
 
 const BUTTON =
-  "inline-flex items-center justify-center rounded-[10px] font-extrabold disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center rounded-[10px] font-extrabold disabled:cursor-not-allowed focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court";
 
 /** `Sat 31 Oct`, from a local `YYYY-MM-DD`. */
 function formatDate(date: string): string {

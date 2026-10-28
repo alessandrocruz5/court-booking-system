@@ -31,8 +31,11 @@ const WEEKDAY = new Date("2026-10-28T12:00:00+08:00");
 /** Sun 25 Oct 2026, Asia/Manila. */
 const WEEKEND = new Date("2026-10-25T12:00:00+08:00");
 
-/** An availability answer whose courts start at the given hours, one list per court. */
-function availability(sport: Sport, courtStarts: number[][]): Availability {
+/**
+ * An availability answer whose courts start at the given hours, one list per court. The server's
+ * `peak` flag is set from `peakFrom` (17, the weekday rule; 0 for a weekend, peak all day).
+ */
+function availability(sport: Sport, courtStarts: number[][], peakFrom = 17): Availability {
   return {
     date: "2026-10-28",
     sport,
@@ -41,15 +44,15 @@ function availability(sport: Sport, courtStarts: number[][]): Availability {
     courts: courtStarts.map((hours, i) => ({
       code: `c-${i + 1}`,
       name: `Court ${i + 1}`,
-      starts: hours.map((hour) => ({ hour, price_centavos: 50000, peak: hour >= 17 })),
+      starts: hours.map((hour) => ({ hour, price_centavos: 50000, peak: hour >= peakFrom })),
     })),
   };
 }
 
 /** Answers per sport; any sport not listed has no free start left tonight. */
-function mockAvailability(bySport: Partial<Record<Sport, number[][]>>) {
+function mockAvailability(bySport: Partial<Record<Sport, number[][]>>, peakFrom = 17) {
   availabilityMock.mockImplementation(async (_date, sport) =>
-    availability(sport, bySport[sport] ?? [[]]),
+    availability(sport, bySport[sport] ?? [[]], peakFrom),
   );
 }
 
@@ -113,24 +116,25 @@ describe("FreeTonight", () => {
     expect(html).not.toContain("start=18");
   });
 
-  it("marks peak rates only when the first free hour is peak", async () => {
-    mockAvailability({ tennis: [[9]], badminton: [[20]] });
+  it("marks peak rates only when the earliest free start, across sports, is peak", async () => {
+    // Tennis comes before badminton in the catalog, but badminton's 9 AM is the earliest start.
+    mockAvailability({ tennis: [[20]], badminton: [[9]] });
     expect(await render()).not.toContain("peak rates");
 
     mockAvailability({ tennis: [[17]] });
     expect(await render()).toContain("Wed 28 Oct · peak rates");
   });
 
-  it("marks peak rates all day on a weekend", async () => {
+  it("follows the server's peak flag, so a weekend morning is peak", async () => {
     vi.setSystemTime(WEEKEND);
-    mockAvailability({ tennis: [[9]] });
+    mockAvailability({ tennis: [[9]] }, 0);
 
     expect(await render()).toContain("Sun 25 Oct · peak rates");
   });
 
   it("does not claim peak rates when every sport is full", async () => {
     vi.setSystemTime(WEEKEND);
-    mockAvailability({});
+    mockAvailability({}, 0);
 
     expect(await render()).not.toContain("peak rates");
   });

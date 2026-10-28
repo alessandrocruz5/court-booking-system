@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { PEAK_FROM_HOUR } from "@/content/site";
 import { SPORT_BG } from "@/content/sports";
 import { getAvailabilityOnce } from "@/lib/api/client";
 import type { Catalog } from "@/lib/api/schemas";
-import { bookingHref, formatHour, isWeekend, manilaToday, windowDates } from "@/lib/booking/params";
+import { bookingHref, formatHour, manilaToday, windowDates } from "@/lib/booking/params";
 
 /** `Sun 25 Oct`, from a `YYYY-MM-DD` date. */
 function formatTonight(date: string): string {
@@ -45,16 +44,25 @@ export async function FreeTonight({ loadCatalog }: { loadCatalog: () => Promise<
   const rows = catalog.sports.flatMap((sport, i) => {
     const result = results[i];
     if (!result || result.status === "rejected") return [];
-    const hours = result.value.courts.flatMap((court) => court.starts.map((start) => start.hour));
-    return [{ sport, next: hours.length > 0 ? Math.min(...hours) : undefined }];
+    const starts = result.value.courts.flatMap((court) => court.starts);
+    const first = starts.reduce<(typeof starts)[number] | undefined>(
+      (best, start) => (best === undefined || start.hour < best.hour ? start : best),
+      undefined,
+    );
+    return [{ sport, next: first?.hour, nextPeak: first?.peak ?? false }];
   });
   if (rows.length === 0) {
     console.error("landing.free_tonight_unavailable");
     return null;
   }
 
-  const firstFree = rows.find((row) => row.next !== undefined)?.next;
-  const peak = firstFree !== undefined && (isWeekend(today) || firstFree >= PEAK_FROM_HOUR);
+  // "Peak rates" follows the earliest free start across sports, by the server's own peak flag.
+  const earliest = rows.reduce<(typeof rows)[number] | undefined>(
+    (best, row) =>
+      row.next !== undefined && (best?.next === undefined || row.next < best.next) ? row : best,
+    undefined,
+  );
+  const peak = earliest?.nextPeak ?? false;
 
   return (
     <div className="rounded-2xl border border-line-soft bg-white p-[22px] shadow-[0_1px_2px_#0f172a0a,0_12px_32px_-12px_#0f172a1f]">

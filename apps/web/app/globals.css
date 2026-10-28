@@ -33,7 +33,7 @@
 /* /book's fixed bottom bar (under 900px) must never cover the footer. */
 @media (width < 900px) {
   body:has(.book-bar) {
-    padding-bottom: 80px;
+    padding-bottom: 84px;
   }
 }
 
@@ -115,6 +115,11 @@ html {
   font-weight: 700;
   padding: 13px 22px;
   text-decoration: none;
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--color-court);
+  outline-offset: 2px;
 }
 
 .btn:hover {

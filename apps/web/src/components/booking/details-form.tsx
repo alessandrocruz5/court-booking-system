@@ -37,7 +37,15 @@ export function DetailsForm({
   const errors = state.fieldErrors ?? {};
 
   return (
-    <form id="details-form" action={formAction} className="grid gap-4">
+    <form
+      id="details-form"
+      action={formAction}
+      // Continue lives outside the form, so it can't be disabled while pending: drop a second submit.
+      onSubmit={(event) => {
+        if (pending) event.preventDefault();
+      }}
+      className="grid gap-4"
+    >
       <input type="hidden" name="court" value={selection.court} />
       <input type="hidden" name="sport" value={selection.sport} />
       <input type="hidden" name="coverage" value={selection.coverage} />
