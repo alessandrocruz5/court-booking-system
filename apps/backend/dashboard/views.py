@@ -156,7 +156,7 @@ def bookings_view(request):
     params = queries.parse_list_params(request.GET)
     context = {
         "params": params,
-        "page": queries.list_bookings(role=request.staff_role, params=params),
+        "page": queries.list_bookings(role=request.staff_role, params=params, now=timezone.now()),
         "status_choices": queries.STATUS_CHOICES,
         "sport_choices": queries.SPORT_CHOICES,
         "source_choices": queries.SOURCE_CHOICES,

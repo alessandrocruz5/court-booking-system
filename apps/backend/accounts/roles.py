@@ -1,7 +1,8 @@
 """The staff dashboard's two roles, stored as Django Groups of the same names.
 
 `owner` sees everything. `viewer` is the public demo: personal data masked, and it may cancel only
-demo bookings or ones staff made, and only before they end; never a real visitor's online booking.
+demo bookings or ones staff made, and only before they end, and check in only demo bookings or
+walk-ins; never a real visitor's online booking.
 Neither role has `is_staff` or `is_superuser`, and accounts come only from `manage.py seed_staff`.
 Permissions are checked on the server; templates only reflect them.
 """
@@ -9,7 +10,7 @@ Permissions are checked on the server; templates only reflect them.
 from datetime import datetime
 from enum import StrEnum
 
-from bookings.rules import Source, Status
+from bookings.rules import TIME_ZONE, Source, Status, local_today
 
 
 class Role(StrEnum):
@@ -52,4 +53,24 @@ def can_cancel(role: Role | None, booking, *, now: datetime) -> bool:
         return True
     if role == Role.VIEWER:
         return (booking.is_demo or booking.source != Source.ONLINE) and booking.ends_at > now
+    return False
+
+
+def can_check_in(role: Role | None, booking, *, now: datetime) -> bool:
+    """Whether `role` may check `booking` in at `now`. For the owner, exactly when
+    `bookings.checkin.check_in` would mark it: confirmed, not a block, not yet checked in, starting
+    today (Manila) and not ended. The viewer also needs demo data or a walk-in. `now` comes from the
+    caller, so this never reads the clock."""
+    if (
+        booking.status != Status.CONFIRMED
+        or booking.source == Source.BLOCK
+        or booking.checked_in_at is not None
+        or booking.starts_at.astimezone(TIME_ZONE).date() != local_today(now)
+        or booking.ends_at <= now
+    ):
+        return False
+    if role == Role.OWNER:
+        return True
+    if role == Role.VIEWER:
+        return booking.is_demo or booking.source != Source.ONLINE
     return False
