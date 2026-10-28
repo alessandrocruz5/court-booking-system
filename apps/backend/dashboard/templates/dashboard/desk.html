@@ -9,6 +9,8 @@ Partials, rendered alone for htmx as `dashboard/desk.html#<name>`:
   desk     the whole desk (swapped as the outerHTML of #desk), plus an out-of-band toast and nav badge
            after a check-in
   suggest  the lookup's suggestions (swapped into #suggest)
+A nameless booking reads "Blocked" for a block and "Walk-in" while it is live (an online booking
+always carries a name until it is anonymized, 7 days after it ends); anything else reads "—".
 No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class in `dashboard.css`.
 {% endcomment %}
 {% block dashboard_title %}Front desk{% endblock %}
@@ -28,7 +30,7 @@ No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class i
             <input id="desk-q" class="desk-input" type="text" name="q" value="{{ query_text }}" placeholder="KC-XXXXXX" maxlength="60" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus hx-get="{% url 'dashboard:desk_suggest' %}" hx-trigger="input changed delay:250ms" hx-target="#suggest">
             <button type="submit" class="btn btn-primary desk-lookup-btn">Look up</button>
           </form>
-          <div id="suggest" class="desk-suggest" aria-live="polite">
+          <div id="suggest" aria-live="polite">
             {% partialdef suggest inline %}
               {% if suggestions %}
                 <ul class="desk-suggest-list" aria-label="Matching bookings">
@@ -57,7 +59,7 @@ No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class i
             <div class="desk-result-head">
               <div class="desk-result-who">
                 <p class="desk-result-ref"><span class="desk-ref">{{ result.reference }}</span> <span class="pill {{ result.pill }}">{{ result.status_label }}</span></p>
-                <h2 id="desk-result-name" class="desk-result-name">{{ result.name|default:"Walk-in" }}</h2>
+                <h2 id="desk-result-name" class="desk-result-name">{% if result.name %}{{ result.name }}{% elif result.status_key == "block" %}Blocked{% elif result.status_key == "pending" or result.status_key == "confirmed" or result.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</h2>
                 {% if result.contact %}<p class="desk-result-contact">{{ result.contact }}</p>{% endif %}
               </div>
               {% if result.amount %}
@@ -122,7 +124,7 @@ No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class i
                 <li class="desk-row">
                   <p class="desk-row-time">{{ row.starts }}{% if row.tag %}<span class="desk-row-tag desk-row-tag-{{ row.tag }}">{{ row.tag|upper }}</span>{% endif %}</p>
                   <div class="desk-row-who">
-                    <p class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}<a href="{% url 'dashboard:desk' %}?q={{ row.reference|urlencode }}">{{ row.name|default:"Walk-in" }}</a></p>
+                    <p class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}<a href="{% url 'dashboard:desk' %}?q={{ row.reference|urlencode }}">{% if row.name %}{{ row.name }}{% elif row.status_key == "block" %}Blocked{% elif row.status_key == "confirmed" or row.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</a></p>
                     <p class="desk-row-meta">{{ row.court }} · <span class="desk-ref">{{ row.reference }}</span></p>
                   </div>
                   {% if row.can_check_in %}
@@ -150,7 +152,7 @@ No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class i
                 <li>
                   <a class="desk-row desk-row-link" href="{% url 'dashboard:booking_detail' row.reference %}">
                     <span class="desk-row-who">
-                      <span class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}{{ row.name|default:"Walk-in" }}</span>
+                      <span class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}{% if row.name %}{{ row.name }}{% elif row.status_key == "block" %}Blocked{% elif row.status_key == "confirmed" or row.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</span>
                       <span class="desk-row-meta">{{ row.court }}</span>
                     </span>
                     <span class="desk-row-until">until {{ row.ends }}</span>

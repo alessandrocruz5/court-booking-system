@@ -24,7 +24,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from accounts.decorators import staff_required
 from accounts.roles import Role, can_cancel, can_check_in, can_create_staff_booking
 from bookings import checkin, holds
-from bookings.rules import HOLD_MINUTES, TIME_ZONE, BookingRuleError, Status, local_today
+from bookings.rules import HOLD_MINUTES, TIME_ZONE, BookingRuleError, Source, Status, local_today
 from core.http import client_ip
 from core.ratelimit import hit
 from payments.confirm import expire_session
@@ -394,8 +394,9 @@ def check_in_view(request, reference):
         raise Http404
     role = request.staff_role
     now = timezone.now()
-    # Already checked in (a double click): a success that changes nothing and spends no budget.
-    # `can_check_in` is False for it, so this comes before the permission check.
+    # Already checked in (a double click): a success that changes nothing and spends no budget,
+    # for a role that could check this kind of booking in (R6, as `can_check_in`, which is False
+    # once checked in, so the role is checked here instead).
     if booking.checked_in_at is None or booking.status != Status.CONFIRMED:
         if not can_check_in(role, booking, now=now):
             return _check_in_refused(request, booking, now, CANT_CHECK_IN, 403)
@@ -406,6 +407,11 @@ def check_in_view(request, reference):
         except checkin.CheckInError as error:
             message = CHECK_IN_ERRORS.get(error.code, CANT_CHECK_IN)
             return _check_in_refused(request, booking, now, message, 403)
+    elif not (
+        role == Role.OWNER
+        or (role == Role.VIEWER and (booking.is_demo or booking.source != Source.ONLINE))
+    ):
+        return _check_in_refused(request, booking, now, CANT_CHECK_IN, 403)
     name = queries.name_for(role, booking.customer_name) or booking.reference
     toast = f"{name} checked in · {booking.court.name}"
     return_to = request.POST.get("return")

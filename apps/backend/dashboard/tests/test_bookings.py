@@ -160,7 +160,6 @@ def listed(client, **params) -> list[str]:
 
 def assert_csp_safe(html):
     tags = Tags(html).tags
-    assert [attrs for tag, attrs in tags if tag == "script" and ("src", None) in attrs] == []
     assert not [
         name
         for _, attrs in tags

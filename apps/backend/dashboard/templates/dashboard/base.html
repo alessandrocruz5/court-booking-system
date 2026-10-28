@@ -62,7 +62,7 @@ Django rejects a block name defined twice. `dashboard_eyebrow` (default: the ven
 
 {% block content %}
   <div hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' class="stack">
-    <header class="dash-head">
+    <header>
       <p class="dash-eyebrow">{% block dashboard_eyebrow %}{% now "l j F · g:i A" %}{% endblock %}</p>
       <h1 class="dash-heading">{% block dashboard_heading %}Dashboard{% endblock %}</h1>
     </header>

@@ -221,6 +221,51 @@ class TestPage:
         assert "1 checked in" in html
         assert 'href="/dashboard/bookings/KC-T00002/"' in html and "until 1 PM" in html
 
+    def test_a_nameless_booking_reads_by_its_kind(self, owner):
+        make("KC-B00001", source=Source.BLOCK, sport=None, price_centavos=0, customer_name="")
+        # An online booking anonymized 7 days after it ended.
+        make("KC-T00001", day=TODAY - timedelta(days=8), customer_name="", customer_email=None)
+
+        block = html_of(owner.get(URL, {"q": "KC-B00001"}))
+        anonymized = html_of(owner.get(URL, {"q": "KC-T00001"}))
+        make("KC-W00001", source=Source.WALK_IN, customer_name="")  # Also arriving next.
+        walk_in = html_of(owner.get(URL, {"q": "KC-W00001"}))
+
+        assert '<h2 id="desk-result-name" class="desk-result-name">Blocked</h2>' in block
+        assert '<h2 id="desk-result-name" class="desk-result-name">—</h2>' in anonymized
+        assert "Walk-in" not in block and "Walk-in" not in anonymized
+        assert '<h2 id="desk-result-name" class="desk-result-name">Walk-in</h2>' in walk_in
+        assert '?q=KC-W00001">Walk-in</a>' in walk_in
+
+    def test_viewer_never_sees_a_real_customer_on_the_page(self, viewer, client):
+        other = ("Rosa Villanueva", "rosa.villanueva@example.com", "+639181234567")
+        make("KC-T00001", hour=13)  # Real, arriving next: Juan Dela Cruz.
+        on_court = make(
+            "KC-T00002",
+            hour=11,
+            hours=2,
+            ends_at=NOW + timedelta(hours=1),
+            customer_name=other[0],
+            customer_email=other[1],
+            customer_mobile=other[2],
+        )
+        Booking.objects.filter(pk=on_court.pk).update(checked_in_at=NOW - timedelta(hours=1))
+
+        page = html_of(viewer.get(URL))
+        # Without JS, a name typed into the lookup is the not-found path with its suggestions.
+        by_names = [html_of(viewer.get(URL, {"q": name})) for name in ("Juan", "Rosa")]
+
+        assert "Juan D." in page and "Rosa V." in page
+        for html in (page, *by_names):
+            assert "desk-suggest-list" not in html
+            for secret in (NAME, EMAIL, MOBILE, *other):
+                assert secret not in html
+        assert all("No booking found for" in html for html in by_names)
+        client.force_login(make_user(Role.OWNER))
+        owner_page = html_of(client.get(URL))
+        assert NAME in owner_page and other[0] in owner_page
+        assert "desk-suggest-list" in html_of(client.get(URL, {"q": "Juan"}))
+
     def test_viewer_gets_two_demo_references_to_try(self, viewer):
         make("KC-T00001", hour=13)  # Real: never a hint.
         make("KC-D00001", hour=13, is_demo=True)
@@ -348,6 +393,45 @@ class TestCheckIn:
 
         assert response.status_code == 200
         assert "Juan D. checked in · Court 1" in html_of(response)
+
+    @pytest.mark.parametrize("return_to", [None, "schedule"])
+    @pytest.mark.parametrize(
+        "fields", [{"is_demo": True}, {"source": Source.WALK_IN}], ids=["demo", "walk_in"]
+    )
+    def test_viewer_double_check_in_of_what_they_may_check_in_is_a_no_op(
+        self, viewer, fields, return_to
+    ):
+        booking = make("KC-D00001", hour=14, **fields)
+        earlier = NOW - timedelta(minutes=5)
+        Booking.objects.filter(pk=booking.pk).update(checked_in_at=earlier)
+
+        data = {"return": return_to} if return_to else {}
+        response = viewer.post(check_in_url(booking.reference), data, headers=HX)
+
+        assert response.status_code == 200
+        assert "Juan D. checked in · Court 1" in html_of(response)
+        booking.refresh_from_db()
+        assert booking.checked_in_at == earlier and booking.checked_in_by is None
+
+    @pytest.mark.parametrize("return_to", [None, "schedule"])
+    def test_viewer_double_check_in_of_a_real_online_booking_is_refused(self, viewer, return_to):
+        """The owner checked it in; the viewer may not check in a real online booking (R6), so
+        the no-op success isn't theirs either."""
+        booking = make("KC-T00001", hour=14)
+        earlier, by = NOW - timedelta(minutes=5), make_user(Role.OWNER)
+        Booking.objects.filter(pk=booking.pk).update(checked_in_at=earlier, checked_in_by=by)
+
+        data = {"return": return_to} if return_to else {}
+        response = viewer.post(check_in_url(booking.reference), data, headers=HX)
+        html = html_of(response)
+
+        assert response.status_code == 403
+        assert "You can&#x27;t check in this booking." in html
+        assert 'id="toast"' not in html and "checked in ·" not in html
+        assert NAME not in html and EMAIL not in html
+        assert response["HX-Retarget"] == ("#panel" if return_to else "#desk")
+        booking.refresh_from_db()
+        assert booking.checked_in_at == earlier and booking.checked_in_by == by
 
     def test_a_cancelled_booking_checked_in_earlier_is_refused(self, owner):
         booking = make("KC-T00001", hour=14, status=Status.CANCELLED)

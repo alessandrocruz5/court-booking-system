@@ -603,6 +603,13 @@ caption {
   font-weight: 700;
 }
 
+.ov-bar-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ov-bar-value {
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -1215,11 +1222,12 @@ button.sg-cell:focus-visible,
 }
 
 /* The now marker (today only): a clay line and a chip with the time, in the current hour's column,
-   `now-m-N` minutes in. It covers every row and lets clicks through. */
+   `now-m-N` minutes in. It covers every row (the header, 3 group rows and 20 court rows; only the
+   header row is explicit, so `1 / -1` would stop there) and lets clicks through. */
 .sg-now {
   position: relative;
   z-index: 5;
-  grid-row: 1 / span 26;
+  grid-row: 1 / span 24;
   pointer-events: none;
 }
 
