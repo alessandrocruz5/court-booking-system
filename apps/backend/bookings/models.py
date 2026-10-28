@@ -72,6 +72,15 @@ class Booking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     cancelled_at = models.DateTimeField(null=True)
     anonymized_at = models.DateTimeField(null=True)
+    # Set by `bookings.checkin.check_in`. Kept if the booking is cancelled afterwards.
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    checked_in_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     class Meta:
         # A CHECK passes when it evaluates to NULL, so nullable columns are tested with IS [NOT]
