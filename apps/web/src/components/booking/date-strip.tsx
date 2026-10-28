@@ -2,8 +2,8 @@ import Link from "next/link";
 import { type BookingParams, bookingHref, formatDayChip, isWeekend } from "@/lib/booking/params";
 
 /**
- * Step 3: the booking window as day chips. Weekends are peak all day, so they carry a "Peak" mark
- * when the catalog says so.
+ * The booking window as seven day buttons. Weekends are peak all day, so they carry a "Peak" mark
+ * when the catalog says so. Rendered inside the "Day & length" card.
  */
 export function DateStrip({
   params,
@@ -20,36 +20,38 @@ export function DateStrip({
   weekendsPeak: boolean;
 }) {
   return (
-    <section aria-labelledby="date-heading">
-      <h2 id="date-heading" className="disp text-xl">
-        Date
-      </h2>
-      <ul className="m-0 mt-3 flex list-none flex-wrap gap-2 p-0">
-        {dates.map((date) => {
-          const on = date === selected;
-          const peak = weekendsPeak && isWeekend(date);
-          return (
-            <li key={date}>
-              <Link
-                href={bookingHref(params, { date })}
-                aria-current={on ? "date" : undefined}
-                className={`inline-flex min-h-11 min-w-20 flex-col items-center justify-center rounded-lg border-2 px-3 py-1 text-sm font-bold no-underline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court ${
-                  on ? "border-court bg-court text-white" : "border-line text-ink hover:bg-line"
-                }`}
+    <ul aria-label="Day" className="m-0 grid list-none grid-cols-7 gap-1.5 p-0">
+      {dates.map((date) => {
+        const on = date === selected;
+        const peak = weekendsPeak && isWeekend(date);
+        // `Today` or `Sat 18`: the first word is the top label, the day number is shown larger.
+        const label = formatDayChip(date, today);
+        return (
+          <li key={date} className="min-w-0">
+            <Link
+              href={bookingHref(params, { date })}
+              aria-current={on ? "date" : undefined}
+              className={`flex min-h-11 flex-col items-center gap-px rounded-[10px] border-[1.5px] px-0.5 py-[9px] no-underline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court ${
+                on
+                  ? "border-ink bg-ink text-white"
+                  : "border-line-soft bg-white text-ink hover:border-ink"
+              }`}
+            >
+              <span className="text-[11px] font-semibold opacity-85 sm:text-xs">
+                {label.split(" ")[0] ?? label}
+              </span>
+              <span className="text-xl leading-[1.1] font-extrabold font-stretch-[110%]">
+                {Number(date.slice(8, 10))}
+              </span>
+              <span
+                className={`h-3 text-[9.5px] font-extrabold tracking-[0.08em] uppercase ${on ? "text-warn-line" : "text-clay"}`}
               >
-                <span>{formatDayChip(date, today)}</span>
-                {peak ? (
-                  <span
-                    className={`text-[0.7rem] font-bold uppercase tracking-wider ${on ? "text-white" : "text-clay"}`}
-                  >
-                    Peak
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+                {peak ? "Peak" : ""}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

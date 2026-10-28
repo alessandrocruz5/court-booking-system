@@ -6,25 +6,34 @@ import {
   AvailabilitySkeleton,
   LoadError,
 } from "@/components/booking/availability-grid";
+import { BookingSummary, BookingSummaryPending } from "@/components/booking/booking-summary";
 import { DateStrip } from "@/components/booking/date-strip";
 import { DurationPicker } from "@/components/booking/duration-picker";
 import { DetailsForm } from "@/components/booking/details-form";
+import { StepCard } from "@/components/booking/step-card";
 import { HOLD_MINUTES } from "@/content/site";
 import { SportPicker } from "@/components/booking/sport-picker";
 import { ApiError, getAvailabilityOnce, getCatalog } from "@/lib/api/client";
-import type { Catalog } from "@/lib/api/schemas";
+import type { Catalog, Sport } from "@/lib/api/schemas";
 import {
   type BookingParams,
   type RawSearchParams,
   bookingHref,
-  formatHour,
-  formatPeso,
   manilaToday,
   parseBookingParams,
   windowDates,
 } from "@/lib/booking/params";
 
 export const metadata: Metadata = { title: "Book a court" };
+
+const HEADING = (
+  <>
+    <p className="eyebrow">Book a court</p>
+    <h1 className="m-0 mb-7 text-[clamp(34px,5vw,48px)] leading-[1.1] font-black tracking-[-0.03em] font-stretch-[112%]">
+      Pick your court
+    </h1>
+  </>
+);
 
 // Dynamic: searchParams is a request-time API, and the client reads env per call, never at build.
 export default async function BookPage({
@@ -48,90 +57,125 @@ export default async function BookPage({
     const qs = query.toString();
     return (
       <main className="wrap">
-        <StepHeader step="sport" />
+        {HEADING}
         <LoadError href={qs ? `/book?${qs}` : "/book"} />
       </main>
     );
   }
 
   const today = manilaToday();
-  const params = parseBookingParams(raw, catalog, today);
+  let params = parseBookingParams(raw, catalog, today);
   const date = params.date ?? today;
   const sport = catalog.sports.find((s) => s.id === params.sport);
+  if (sport && params.start !== undefined && params.court === undefined) {
+    params = await withFirstFreeCourt(params, date, sport.id);
+  }
   const selected =
     sport && params.court !== undefined && params.start !== undefined
       ? { court: params.court, start: params.start }
       : undefined;
-  const step = selected ? "details" : sport ? "time" : "sport";
+  const hoursLabel = `${params.hours} ${params.hours === 1 ? "hour" : "hours"}`;
 
   return (
     <main className="wrap">
-      <StepHeader step={step} />
-      <div className="mt-6 grid gap-8">
-        <SportPicker catalog={catalog} params={params} />
-        <DurationPicker params={params} maxHours={catalog.max_hours} />
-        <DateStrip
-          params={params}
-          dates={windowDates(today, catalog.window_days)}
-          today={today}
-          selected={date}
-          weekendsPeak={catalog.peak.weekends_all_day}
-        />
-        <section aria-labelledby="times-heading">
-          <h2 id="times-heading" className="disp text-xl">
-            Times
-          </h2>
-          <div className="mt-3">
+      {HEADING}
+      <div className="group/book grid grid-cols-1 items-start gap-7 min-[900px]:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-w-0 gap-3.5">
+          <StepCard number={1} title="Sport" state={sport ? "done" : "active"}>
+            <SportPicker catalog={catalog} params={params} />
+          </StepCard>
+          <StepCard number={2} title="Day & length" state={sport ? "done" : "idle"}>
+            <DateStrip
+              params={params}
+              dates={windowDates(today, catalog.window_days)}
+              today={today}
+              selected={date}
+              weekendsPeak={catalog.peak.weekends_all_day}
+            />
+            <DurationPicker params={params} maxHours={catalog.max_hours} />
+          </StepCard>
+          <StepCard
+            number={3}
+            title="Start time"
+            state={selected ? "done" : sport ? "active" : "idle"}
+            right={
+              <div className="flex items-center gap-3.5 text-[13px] text-slate-5">
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden="true" className="size-2 rounded-full bg-clay" />
+                  Peak rate
+                </span>
+                <span>Prices for {hoursLabel}</span>
+              </div>
+            }
+          >
             {/* Keyed so the skeleton shows again when a choice changes. */}
             <Suspense
               key={`${params.sport}|${params.coverage}|${params.hours}|${date}`}
               fallback={<AvailabilitySkeleton />}
             >
-              <AvailabilityGrid params={params} date={date} />
+              <AvailabilityGrid params={params} date={date} today={today} hours={catalog.hours} />
             </Suspense>
-          </div>
-        </section>
-        {selected && sport ? (
-          <section
-            aria-labelledby="selected-heading"
-            className="rounded-xl border-2 border-court bg-white p-4"
+          </StepCard>
+          <StepCard
+            number={4}
+            title="Your details"
+            state={selected ? "active" : "idle"}
+            dimmed={!selected}
           >
-            <h2 id="selected-heading" className="disp text-xl">
-              Selected
-            </h2>
-            {/* Its own boundary: the slot is re-checked against fresh availability. */}
-            <Suspense
-              key={`${params.sport}|${params.coverage}|${params.hours}|${date}|${selected.court}|${selected.start}`}
-              fallback={
-                <>
-                  <p className="mt-2 mb-0">
-                    {sport.label}
-                    {sport.coverages.length > 1 ? `, ${params.coverage} court` : ""} · Court{" "}
-                    <span className="uppercase">{selected.court}</span>
-                  </p>
-                  <p className="mt-1 mb-0">
-                    {date} · {formatHour(selected.start)}–
-                    {formatHour(selected.start + params.hours)} ({params.hours}{" "}
-                    {params.hours === 1 ? "hour" : "hours"})
-                  </p>
-                  <p aria-busy="true" className="mt-3 mb-0 text-sm text-ink/70">
+            {selected && sport ? (
+              /* Its own boundary: the slot is re-checked against fresh availability. */
+              <Suspense
+                key={`${params.sport}|${params.coverage}|${params.hours}|${date}|${selected.court}|${selected.start}`}
+                fallback={
+                  <p aria-busy="true" className="m-0 text-[15px] text-slate-5">
                     Checking that time is still free…
                   </p>
-                </>
-              }
-            >
-              <DetailsStep params={params} date={date} sport={sport} />
-            </Suspense>
-          </section>
-        ) : null}
+                }
+              >
+                <DetailsStep params={params} date={date} sport={sport} />
+              </Suspense>
+            ) : (
+              <p className="m-0 text-[15px] text-slate-5">
+                Pick a sport, a day and a start time first.
+              </p>
+            )}
+          </StepCard>
+        </div>
+        <Suspense
+          key={`${params.sport}|${params.coverage}|${params.hours}|${date}|${params.court}|${params.start}`}
+          fallback={<BookingSummaryPending catalog={catalog} params={params} date={date} />}
+        >
+          <BookingSummary catalog={catalog} params={params} date={date} />
+        </Suspense>
       </div>
     </main>
   );
 }
 
 /**
+ * A start with no court (the landing's "Free tonight" links) selects the first court that is free
+ * at that hour. If availability can't be loaded, the params are left alone and the grid shows the
+ * error.
+ */
+async function withFirstFreeCourt(
+  params: BookingParams,
+  date: string,
+  sport: Sport,
+): Promise<BookingParams> {
+  try {
+    // Shares the grid's call within this request (same arguments).
+    const availability = await getAvailabilityOnce(date, sport, params.coverage, params.hours);
+    const first = availability.courts.find((c) => c.starts.some((s) => s.hour === params.start));
+    return first ? { ...params, court: first.code } : params;
+  } catch (error) {
+    if (error instanceof ApiError) return params;
+    throw error;
+  }
+}
+
+/**
  * The details form, shown only when the selected start is in fresh availability for that court.
- * The price shown comes from that availability; the backend quotes it again on submit.
+ * The price shown in the summary comes from that availability; the backend quotes it again on submit.
  */
 async function DetailsStep({
   params,
@@ -158,7 +202,7 @@ async function DetailsStep({
   const slot = courtEntry?.starts.find((s) => s.hour === start);
   if (!courtEntry || !slot) {
     return (
-      <div role="alert" className="mt-2">
+      <div role="alert">
         <p className="m-0 font-bold">That time is no longer available.</p>
         <Link
           href={bookingHref(params, { date, court: undefined, start: undefined })}
@@ -181,62 +225,6 @@ async function DetailsStep({
         start,
         hours: params.hours,
       }}
-      summary={{
-        courtName: courtEntry.name,
-        sportLabel: sport.label,
-        coverageLabel:
-          sport.coverages.length > 1
-            ? params.coverage === "half"
-              ? "Half court"
-              : "Full court"
-            : undefined,
-        dateLabel: formatDate(date),
-        timeRange: `${formatHour(start)}–${formatHour(start + params.hours)} (${params.hours} ${
-          params.hours === 1 ? "hour" : "hours"
-        })`,
-        price: formatPeso(slot.price_centavos),
-      }}
     />
-  );
-}
-
-/** `Sat 31 Oct`, from a local `YYYY-MM-DD`. */
-function formatDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)));
-}
-
-const STEPS = [
-  { id: "sport", label: "Sport" },
-  { id: "time", label: "Time" },
-  { id: "details", label: "Details" },
-] as const;
-
-function StepHeader({ step }: { step: (typeof STEPS)[number]["id"] }) {
-  const current = STEPS.findIndex((s) => s.id === step);
-  return (
-    <header>
-      <p className="eyebrow">Book a court</p>
-      <h1 className="disp text-4xl sm:text-5xl">Pick your court</h1>
-      <nav aria-label="Booking steps" className="mt-4">
-        <ol className="m-0 flex list-none flex-wrap items-center gap-2 p-0 text-sm font-bold">
-          {STEPS.map((s, i) => (
-            <li
-              key={s.id}
-              aria-current={i === current ? "step" : undefined}
-              className={i === current ? "text-court" : "text-ink/60"}
-            >
-              {i > 0 ? <span aria-hidden="true">→ </span> : null}
-              {s.label}
-            </li>
-          ))}
-        </ol>
-      </nav>
-    </header>
   );
 }

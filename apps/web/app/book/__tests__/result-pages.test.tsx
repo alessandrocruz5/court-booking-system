@@ -112,8 +112,17 @@ describe("/book/success", () => {
 
     const html = await render(SuccessPage);
     expect(confirmMock).toHaveBeenCalledWith("cs_x");
-    expect(html).toContain("Booking confirmed");
+    expect(html).toContain("Payment received");
     expect(html).toContain(confirmed.booking!.reference);
+  });
+
+  it("never says a copy was sent: no email is sent", async () => {
+    cookieValue = "cs_x";
+    confirmMock.mockResolvedValue(confirmed);
+
+    const html = await render(SuccessPage);
+    expect(html).toContain("You&#x27;re booked.");
+    expect(html).not.toContain("sent to");
   });
 
   it("renders expired as a hold that may still go through", async () => {
@@ -167,9 +176,9 @@ describe("/book/success", () => {
     confirmMock.mockResolvedValue(confirmed);
 
     expect(await render(SuccessPage, withSearchParams({ ref: REF_A }))).toContain(
-      "Booking confirmed",
+      "Payment received",
     );
-    expect(await render(SuccessPage)).toContain("Booking confirmed");
+    expect(await render(SuccessPage)).toContain("Payment received");
     expect(confirmMock.mock.calls).toEqual([["cs_legacy"], ["cs_legacy"]]);
   });
 

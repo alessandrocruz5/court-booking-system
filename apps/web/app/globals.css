@@ -2,22 +2,59 @@
 
 @theme {
   --color-ink: #0f172a;
+  --color-ink-2: #1e293b;
+  --color-ink-3: #334155;
+  --color-slate-6: #475569;
+  --color-slate-5: #64748b;
+  --color-slate-4: #94a3b8;
+  --color-line: #cbd5e1;
+  --color-line-soft: #e2e8f0;
+  --color-hair: #f1f5f9;
   --color-paper: #f8fafc;
   --color-court: #16a34a;
+  --color-court-dark: #15803d;
+  --color-court-soft: #dcfce7;
+  --color-court-tint: #f0fdf4;
+  --color-court-ink: #14532d;
   --color-clay: #c2410c;
-  --color-line: #cbd5e1;
+  --color-clay-light: #fb923c;
+  --color-warn-bg: #fff7ed;
+  --color-warn-line: #fed7aa;
+  --color-warn-ink: #9a3412;
+  --color-pending: #ea580c;
+  /* Sport tags: the hex values of SPORT_COLORS in src/content/sports.ts (tested). */
+  --color-sport-basketball: #e0662d;
+  --color-sport-volleyball: #d4a017;
+  --color-sport-tennis: #5b9a1e;
+  --color-sport-badminton: #2b7fc4;
+  --color-sport-pickleball: #14958a;
+}
+
+/* /book's fixed bottom bar (under 900px) must never cover the footer. */
+@media (width < 900px) {
+  body:has(.book-bar) {
+    padding-bottom: 80px;
+  }
 }
 
 @theme inline {
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 html {
   background: var(--color-paper);
   color: var(--color-ink);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* The default focus ring; a component's own focus-visible utilities still win. */
+@layer base {
+  :focus-visible {
+    outline: 3px solid #16a34a55;
+    outline-offset: 1px;
+  }
 }
 
 .disp {
@@ -29,8 +66,9 @@ html {
 
 .wrap {
   margin-inline: auto;
-  max-width: 64rem;
-  padding: 3rem 1.25rem;
+  max-width: 1120px;
+  padding-block: 3rem;
+  padding-inline: 20px;
 }
 
 .eyebrow {
@@ -51,36 +89,36 @@ html {
 
 /* The test-mode banner: on every page, including 404 and global-error. */
 .banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: var(--color-ink);
-  color: var(--color-paper);
-  padding: 0.5rem 1.25rem;
+  color: var(--color-line-soft);
+  padding: 8px 16px;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 12.5px;
   letter-spacing: 0.04em;
 }
 
+/* Outline button; .btn-accent is the primary (green) one, .btn-dark the ink one. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-ink);
-  border-radius: 0.5rem;
-  background: transparent;
+  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  background: #fff;
   color: var(--color-ink);
   cursor: pointer;
   font: inherit;
   font-weight: 700;
-  padding: 0.7rem 1.25rem;
+  padding: 13px 22px;
   text-decoration: none;
 }
 
 .btn:hover {
-  background: var(--color-line);
-}
-
-.btn:focus-visible {
-  outline: 3px solid var(--color-court);
-  outline-offset: 2px;
+  border-color: var(--color-ink);
 }
 
 .btn-accent {
@@ -90,5 +128,17 @@ html {
 }
 
 .btn-accent:hover {
-  background: #15803d;
+  border-color: var(--color-court-dark);
+  background: var(--color-court-dark);
+}
+
+.btn-dark {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+}
+
+.btn-dark:hover {
+  border-color: var(--color-ink-2);
+  background: var(--color-ink-2);
 }

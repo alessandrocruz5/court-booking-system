@@ -1,2 +1,5 @@
 # Vendored, minified upstream files: kept byte-for-byte.
 apps/backend/dashboard/static/dashboard/htmx.min.js
+
+# Claude Design prototype runtime, kept as exported.
+docs/plans/**/prototypes/
