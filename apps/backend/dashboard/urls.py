@@ -8,6 +8,9 @@ app_name = "dashboard"
 
 urlpatterns = [
     path("", views.overview_view, name="overview"),
+    path("desk/", views.desk_view, name="desk"),
+    path("desk/suggest/", views.suggest_view, name="desk_suggest"),
+    path("desk/check-in/<str:reference>/", views.check_in_view, name="check_in"),
     path("bookings/", views.bookings_view, name="bookings"),
     path("bookings/<str:reference>/", views.booking_detail_view, name="booking_detail"),
     path("schedule/", views.schedule_view, name="schedule"),

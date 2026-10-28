@@ -4,7 +4,29 @@
  *
  * The tokens are the same values as the storefront's `apps/web/app/globals.css` (`--color-*`
  * there). Change both together. `--error` is backend-only for now.
+ *
+ * Fonts are self-hosted (`fonts/`, SIL OFL, see `fonts/OFL.txt`) because the CSP is `font-src 'self'`.
+ * `collectstatic` rewrites the font paths below to the hashed files.
  */
+
+/* Archivo, variable: width 62-125 and weight 400-900, latin subset. */
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 400 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("fonts/Archivo-Variable.woff2") format("woff2");
+}
+
+/* JetBrains Mono Bold, for booking references. Medium text uses this face too. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/JetBrainsMono-Bold.woff2") format("woff2");
+}
 
 :root {
   --ink: #0f172a;
@@ -17,8 +39,9 @@
   --muted: #475569;
   --radius: 0.5rem;
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 *,
@@ -66,13 +89,24 @@ a {
 
 /* The test-mode banner: on every page, error pages included. */
 .banner {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   background: var(--ink);
-  color: var(--paper);
+  color: #e2e8f0;
   padding: 0.5rem 1rem;
   text-align: center;
   font-size: 0.8rem;
   letter-spacing: 0.04em;
+}
+
+.banner-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
 }
 
 /* Layout */
