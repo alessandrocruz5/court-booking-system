@@ -27,7 +27,7 @@ The public demo viewer can cancel a demo booking, walk-in or block **only while 
 every caller passes the request's clock.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - Locked decision (MVP plan), narrowed here by the user on 2026-10-21: "The viewer can operate the demo … cancel demo
   or staff-made bookings … Only the owner can cancel a real visitor's online booking." Today the viewer can also cancel
@@ -87,7 +87,7 @@ every caller passes the request's clock.
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

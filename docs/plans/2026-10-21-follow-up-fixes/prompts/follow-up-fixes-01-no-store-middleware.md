@@ -24,7 +24,7 @@ responses no view produces: an unmatched-route 404, a 400 from `DisallowedHost`,
 and a 500. Do it with one small middleware placed **first** (outermost) in `MIDDLEWARE`.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329` (`docker compose up -d --wait db` from the repo root); test settings are
   `config/settings_test.py` (`ALLOWED_HOSTS = ["testserver", "localhost"]`).
 - Review constraint (a merge Blocker): "`/api/v1/*` and `/webhooks/*` on the backend send `Cache-Control: no-store`."
@@ -72,7 +72,7 @@ and a 500. Do it with one small middleware placed **first** (outermost) in `MIDD
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

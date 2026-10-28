@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f8fafc;color:#0f172a;font-family:Archivo,ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#15803d;text-decoration:none;font-weight:600}
+a:hover{color:#0f172a;text-decoration:underline}
+input:focus,button:focus-visible{outline:3px solid #16a34a55;outline-offset:1px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;padding-bottom:{{ bottomPad }}">
+  <sc-if value="{{ showBanner }}" hint-placeholder-val="{{ true }}">
+    <div style="background:#0f172a;color:#e2e8f0;text-align:center;font-size:12.5px;letter-spacing:.04em;padding:8px 16px;display:flex;justify-content:center;gap:8px;align-items:center"><span style="width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block"></span>Fictional venue · Test mode, no real payments</div>
+  </sc-if>
+  <header style="background:#fff;border-bottom:1px solid #e2e8f0;position:sticky;top:0;z-index:20">
+    <div style="max-width:1120px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+      <button onClick="{{ goHome }}" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:10px">
+        <span style="width:30px;height:30px;border-radius:8px;background:#16a34a;color:#fff;display:grid;place-items:center;font-weight:900;font-size:16px;font-stretch:115%">K</span>
+        <span style="font-weight:800;font-size:19px;letter-spacing:-.02em;font-stretch:112%">Kalaro Courts</span>
+      </button>
+      <nav style="display:flex;gap:6px;align-items:center">
+        <button onClick="{{ goFind }}" style="all:unset;cursor:pointer;font-weight:600;font-size:15px;padding:9px 12px;border-radius:8px;color:#334155" style-hover="background:#f1f5f9">Find booking</button>
+        <button onClick="{{ goBook }}" style="all:unset;cursor:pointer;font-weight:700;font-size:15px;padding:9px 16px;border-radius:8px;background:#0f172a;color:#fff" style-hover="background:#1e293b">Book</button>
+      </nav>
+    </div>
+  </header>
+
+  <main style="flex:1">
+  <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+    <section style="max-width:1120px;margin:0 auto;padding:56px 20px 40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:40px;align-items:center">
+      <div>
+        <div style="font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#c2410c">Open daily · 7 AM – 11 PM</div>
+        <h1 style="font-size:clamp(42px,6vw,68px);line-height:.98;font-weight:900;letter-spacing:-.035em;font-stretch:112%;margin:14px 0 18px;text-wrap:balance">Book a court in under a minute.</h1>
+        <p style="font-size:18px;line-height:1.55;color:#475569;margin:0 0 28px;max-width:480px;text-wrap:pretty">Basketball, volleyball, tennis, badminton and pickleball. Pay online, then show your reference at the front desk.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <button onClick="{{ goBook }}" style="all:unset;cursor:pointer;background:#16a34a;color:#fff;font-weight:700;font-size:17px;padding:15px 26px;border-radius:10px" style-hover="background:#15803d">Book a court</button>
+          <button onClick="{{ goFind }}" style="all:unset;cursor:pointer;border:1.5px solid #cbd5e1;background:#fff;color:#0f172a;font-weight:700;font-size:17px;padding:13.5px 24px;border-radius:10px" style-hover="border-color:#0f172a">Find my booking</button>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px;box-shadow:0 1px 2px #0f172a0a,0 12px 32px -12px #0f172a1f">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+          <div style="font-weight:800;font-size:17px">Free tonight</div>
+          <div style="font-size:13px;color:#64748b">Sun 25 Oct · peak rates</div>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <sc-for list="{{ tonight }}" as="t" hint-placeholder-count="5">
+            <button onClick="{{ t.onClick }}" style="all:unset;cursor:pointer;display:grid;grid-template-columns:10px 1fr auto auto;gap:12px;align-items:center;padding:13px 10px;border-top:1px solid #f1f5f9;border-radius:8px" style-hover="background:#f8fafc">
+              <span style="width:10px;height:10px;border-radius:3px;background:{{ t.color }}"></span>
+              <span style="font-weight:700;font-size:16px">{{ t.label }}</span>
+              <span style="font-size:14px;color:{{ t.nextColor }};font-weight:600">{{ t.next }}</span>
+              <span style="font-size:18px;color:#94a3b8">›</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+
+    <section style="max-width:1120px;margin:0 auto;padding:32px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-.025em;font-stretch:110%;margin:0">Sports &amp; rates</h2>
+        <div style="display:flex;gap:16px;font-size:13.5px;color:#475569"><span>Per hour</span><span><b style="color:#c2410c">Peak</b> = weekdays from 5 PM, weekends all day</span></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:12px 20px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0">
+          <span>Sport</span><span>Courts</span><span style="text-align:right">Off-peak</span><span style="text-align:right">Peak</span>
+        </div>
+        <sc-for list="{{ rateRows }}" as="r" hint-placeholder-count="6">
+          <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:16px 20px;border-top:1px solid #f1f5f9;align-items:center">
+            <span style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px"><span style="width:10px;height:10px;border-radius:3px;background:{{ r.color }};flex:none"></span>{{ r.label }}<span style="font-weight:500;color:#64748b;font-size:14px">{{ r.sub }}</span></span>
+            <span style="color:#475569;font-size:15px">{{ r.courts }}</span>
+            <span style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums">{{ r.off }}</span>
+            <span style="text-align:right;font-weight:700;color:#c2410c;font-variant-numeric:tabular-nums">{{ r.peak }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <p style="font-size:14px;color:#64748b;margin:12px 2px 0">Basketball and volleyball share the same two courts. Badminton and pickleball share 12 multi-courts.</p>
+    </section>
+
+    <section style="max-width:1120px;margin:0 auto;padding:40px 20px">
+      <h2 style="font-size:30px;font-weight:800;letter-spacing:-.025em;font-stretch:110%;margin:0 0 18px">How it works</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px">
+            <div style="font-size:34px;font-weight:900;font-stretch:115%;color:#16a34a;line-height:1">{{ s.n }}</div>
+            <div style="font-weight:800;font-size:18px;margin:14px 0 6px">{{ s.t }}</div>
+            <div style="color:#475569;font-size:15px;line-height:1.5">{{ s.d }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section style="max-width:1120px;margin:0 auto;padding:40px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:40px">
+      <div>
+        <h2 style="font-size:30px;font-weight:800;letter-spacing:-.025em;font-stretch:110%;margin:0 0 12px">Questions</h2>
+        <p style="color:#475569;font-size:16px;line-height:1.55;margin:0">Open daily, 7 AM to 11 PM. Book up to 7 days ahead, for 1 to 3 hours, starting on the hour.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;border-top:1px solid #e2e8f0">
+        <sc-for list="{{ faqs }}" as="f" hint-placeholder-count="7">
+          <div style="border-bottom:1px solid #e2e8f0">
+            <button onClick="{{ f.onClick }}" style="all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:center;width:100%;padding:18px 2px;font-weight:700;font-size:16px;gap:16px">
+              <span>{{ f.q }}</span><span style="font-size:20px;color:#64748b;font-weight:400;flex:none">{{ f.icon }}</span>
+            </button>
+            <sc-if value="{{ f.open }}" hint-placeholder-val="{{ false }}">
+              <p style="margin:-6px 2px 18px;color:#475569;font-size:15.5px;line-height:1.55;max-width:560px">{{ f.a }}</p>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section style="max-width:1120px;margin:0 auto;padding:24px 20px 64px">
+      <div style="background:#0f172a;color:#fff;border-radius:18px;padding:32px;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#fb923c">For venue owners</div>
+          <div style="font-size:26px;font-weight:800;letter-spacing:-.02em;margin:8px 0 6px;font-stretch:110%">See the owner's side</div>
+          <div style="color:#cbd5e1;font-size:16px">Live schedule, front-desk check-in, walk-ins and revenue.</div>
+        </div>
+        <a href="Kalaro Staff.dc.html" style="background:#16a34a;color:#fff;font-weight:700;font-size:16px;padding:14px 22px;border-radius:10px;text-decoration:none">Open the staff dashboard</a>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{ isBook }}" hint-placeholder-val="{{ false }}">
+    <section style="max-width:1120px;margin:0 auto;padding:36px 20px 64px">
+      <div style="font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#c2410c">Book a court</div>
+      <h1 style="font-size:clamp(34px,5vw,48px);font-weight:900;letter-spacing:-.03em;font-stretch:112%;margin:8px 0 28px">Pick your court</h1>
+      <div style="display:grid;grid-template-columns:{{ bookCols }};gap:28px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="width:26px;height:26px;border-radius:50%;background:{{ step1.bg }};color:{{ step1.fg }};display:grid;place-items:center;font-size:13px;font-weight:800">{{ step1.mark }}</span><span style="font-weight:800;font-size:19px">Sport</span></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+              <sc-for list="{{ sports }}" as="s" hint-placeholder-count="5">
+                <button onClick="{{ s.onClick }}" style="all:unset;cursor:pointer;border:2px solid {{ s.bd }};background:{{ s.bg }};border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px" style-hover="border-color:#16a34a">
+                  <span style="width:22px;height:4px;border-radius:2px;background:{{ s.color }};margin-bottom:8px"></span>
+                  <span style="font-weight:800;font-size:16.5px">{{ s.label }}</span>
+                  <span style="font-size:13.5px;color:#64748b">{{ s.courts }} courts · from {{ s.from }}/h</span>
+                </button>
+              </sc-for>
+            </div>
+            <sc-if value="{{ showCov }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f1f5f9">
+                <div style="font-weight:700;font-size:14px;color:#334155;margin-bottom:10px">Basketball coverage</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+                  <sc-for list="{{ covOpts }}" as="c" hint-placeholder-count="2">
+                    <button onClick="{{ c.onClick }}" style="all:unset;cursor:pointer;border:2px solid {{ c.bd }};background:{{ c.bg }};border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center">
+                      <span style="width:18px;height:18px;border-radius:50%;border:2px solid {{ c.dot }};display:grid;place-items:center;flex:none"><span style="width:8px;height:8px;border-radius:50%;background:{{ c.dotFill }}"></span></span>
+                      <span style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:700">{{ c.label }}</span><span style="font-size:13px;color:#64748b">{{ c.sub }}</span></span>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="width:26px;height:26px;border-radius:50%;background:{{ step2.bg }};color:{{ step2.fg }};display:grid;place-items:center;font-size:13px;font-weight:800">{{ step2.mark }}</span><span style="font-weight:800;font-size:19px">Day &amp; length</span></div>
+            <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">
+              <sc-for list="{{ days }}" as="d" hint-placeholder-count="7">
+                <button onClick="{{ d.onClick }}" style="all:unset;cursor:pointer;border:1.5px solid {{ d.bd }};background:{{ d.bg }};color:{{ d.fg }};border-radius:10px;padding:9px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:44px">
+                  <span style="font-size:12px;font-weight:600;opacity:.85">{{ d.top }}</span>
+                  <span style="font-size:20px;font-weight:800;font-stretch:110%">{{ d.num }}</span>
+                  <span style="font-size:9.5px;font-weight:800;letter-spacing:.08em;color:{{ d.peakColor }};height:12px">{{ d.peakLabel }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;margin-top:16px;flex-wrap:wrap">
+              <span style="font-weight:700;font-size:14px;color:#334155">Length</span>
+              <div style="display:flex;background:#f1f5f9;border-radius:10px;padding:4px;gap:4px">
+                <sc-for list="{{ durs }}" as="d" hint-placeholder-count="3">
+                  <button onClick="{{ d.onClick }}" style="all:unset;cursor:pointer;padding:9px 18px;border-radius:7px;font-weight:700;font-size:15px;background:{{ d.bg }};color:{{ d.fg }};box-shadow:{{ d.sh }}">{{ d.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:26px;height:26px;border-radius:50%;background:{{ step3.bg }};color:{{ step3.fg }};display:grid;place-items:center;font-size:13px;font-weight:800">{{ step3.mark }}</span><span style="font-weight:800;font-size:19px">Start time</span></div>
+              <div style="display:flex;gap:14px;font-size:13px;color:#64748b"><span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#c2410c"></span>Peak rate</span><span>Prices for {{ durLabel }}</span></div>
+            </div>
+            <sc-if value="{{ noSport }}" hint-placeholder-val="{{ true }}">
+              <div style="border:1.5px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;color:#64748b;font-size:15px">Pick a sport to see free times.</div>
+            </sc-if>
+            <sc-if value="{{ hasTimes }}" hint-placeholder-val="{{ false }}">
+              <sc-if value="{{ pastNote }}" hint-placeholder-val="{{ false }}"><div style="font-size:13.5px;color:#64748b;margin:-6px 0 12px">Earlier times today have passed.</div></sc-if>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:8px">
+                <sc-for list="{{ times }}" as="t" hint-placeholder-count="8">
+                  <button onClick="{{ t.onClick }}" disabled="{{ t.disabled }}" style="all:unset;cursor:{{ t.cursor }};border:1.5px solid {{ t.bd }};background:{{ t.bg }};border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;opacity:{{ t.op }}">
+                    <span style="font-weight:800;font-size:16px;color:{{ t.fg }}">{{ t.label }}</span>
+                    <span style="font-size:13px;font-weight:700;color:{{ t.priceColor }};font-variant-numeric:tabular-nums">{{ t.price }}</span>
+                    <span style="font-size:11.5px;color:{{ t.subColor }}">{{ t.left }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ noTimes }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1.5px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;color:#64748b;font-size:15px">No times left on this day. Try another day or a shorter length.</div>
+            </sc-if>
+            <sc-if value="{{ hasCourts }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:18px;padding-top:16px;border-top:1px solid #f1f5f9">
+                <div style="font-weight:700;font-size:14px;color:#334155;margin-bottom:10px">Court <span style="font-weight:500;color:#64748b">· {{ courtCount }} free at {{ startLabel }}</span></div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px">
+                  <sc-for list="{{ courts }}" as="c" hint-placeholder-count="2">
+                    <button onClick="{{ c.onClick }}" style="all:unset;cursor:pointer;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};border-radius:999px;padding:9px 16px;font-weight:700;font-size:14.5px">{{ c.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px;opacity:{{ detailsOp }}">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="width:26px;height:26px;border-radius:50%;background:{{ step4.bg }};color:{{ step4.fg }};display:grid;place-items:center;font-size:13px;font-weight:800">{{ step4.mark }}</span><span style="font-weight:800;font-size:19px">Your details</span></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+              <label style="display:flex;flex-direction:column;gap:6px;grid-column:1/-1"><span style="font-weight:700;font-size:14px">Full name</span><input value="{{ name }}" onChange="{{ onName }}" placeholder="Juan dela Cruz" style="font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:#0f172a"></label>
+              <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:700;font-size:14px">Email</span><input type="email" value="{{ email }}" onChange="{{ onEmail }}" placeholder="you@email.com" style="font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:#0f172a"></label>
+              <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:700;font-size:14px">Mobile number</span><input type="tel" value="{{ mobile }}" onChange="{{ onMobile }}" placeholder="0917 123 4567" style="font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;background:#fff;color:#0f172a"></label>
+            </div>
+            <label style="display:flex;gap:12px;align-items:flex-start;margin-top:16px;font-size:14.5px;line-height:1.5;color:#334155;cursor:pointer">
+              <input type="checkbox" checked="{{ agree }}" onChange="{{ onAgree }}" style="width:20px;height:20px;margin:1px 0 0;accent-color:#16a34a;flex:none">
+              <span>I agree to the <a href="#">privacy notice</a> and to Kalaro Courts storing my name, email and mobile for this booking.</span>
+            </label>
+          </div>
+        </div>
+
+        <aside style="position:sticky;top:84px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 12px 32px -16px #0f172a26">
+          <div style="padding:20px 22px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:800;font-size:18px">Your booking</span>
+            <sc-if value="{{ sumSport }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#334155"><span style="width:9px;height:9px;border-radius:3px;background:{{ sumColor }}"></span>{{ sumSportLabel }}</span></sc-if>
+          </div>
+          <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ summary }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:12px;font-size:15px"><span style="color:#64748b">{{ r.k }}</span><span style="font-weight:600;text-align:right;color:{{ r.c }}">{{ r.v }}</span></div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasPrice }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:14px 22px;border-top:1px dashed #e2e8f0;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ lines }}" as="l" hint-placeholder-count="1">
+                <div style="display:flex;justify-content:space-between;font-size:14px;color:#475569"><span>{{ l.k }}</span><span style="font-variant-numeric:tabular-nums">{{ l.v }}</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="padding:16px 22px 22px;border-top:1px solid #f1f5f9;background:#f8fafc">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px"><span style="font-weight:700">Total</span><span style="font-weight:900;font-size:28px;font-stretch:110%;font-variant-numeric:tabular-nums">{{ total }}</span></div>
+            <button onClick="{{ pay }}" disabled="{{ notValid }}" style="all:unset;box-sizing:border-box;cursor:{{ payCursor }};width:100%;text-align:center;background:{{ payBg }};color:{{ payFg }};font-weight:800;font-size:16.5px;padding:15px;border-radius:10px">Continue to payment</button>
+            <div style="font-size:13px;color:#64748b;line-height:1.5;margin-top:10px;text-align:center">{{ payHint }}</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+    <sc-if value="{{ showBar }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-top:1px solid #e2e8f0;box-shadow:0 -8px 24px -12px #0f172a33;padding:12px 16px;display:flex;align-items:center;gap:14px">
+        <div style="flex:1;min-width:0"><div style="font-size:12.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ barSub }}</div><div style="font-weight:900;font-size:22px;font-variant-numeric:tabular-nums">{{ total }}</div></div>
+        <button onClick="{{ pay }}" disabled="{{ notValid }}" style="all:unset;cursor:{{ payCursor }};background:{{ payBg }};color:{{ payFg }};font-weight:800;font-size:16px;padding:14px 20px;border-radius:10px">Continue to payment</button>
+      </div>
+    </sc-if>
+  </sc-if>
+
+  <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+    <section style="max-width:640px;margin:0 auto;padding:48px 20px 64px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><span style="width:34px;height:34px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;font-weight:900;font-size:18px">✓</span><span style="font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#15803d">Payment received</span></div>
+      <h1 style="font-size:clamp(36px,6vw,52px);font-weight:900;letter-spacing:-.03em;font-stretch:112%;margin:0 0 24px">You're booked.</h1>
+      <div style="background:#0f172a;color:#fff;border-radius:18px;padding:26px 26px 22px;position:relative;overflow:hidden">
+        <div style="font-size:13px;color:#94a3b8;font-weight:600;letter-spacing:.04em">Your reference</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 14px">
+          <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:700;font-size:clamp(34px,8vw,48px);letter-spacing:.04em">{{ done.ref }}</span>
+          <button onClick="{{ copyRef }}" style="all:unset;cursor:pointer;border:1.5px solid #334155;color:#e2e8f0;font-weight:700;font-size:14px;padding:9px 14px;border-radius:8px" style-hover="border-color:#94a3b8">{{ copyLabel }}</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;background:#16a34a;border-radius:10px;padding:12px 14px;font-weight:700;font-size:15px">Show this reference at the front desk when you arrive.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-top:14px">
+        <sc-for list="{{ done.rows }}" as="r" hint-placeholder-count="6">
+          <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 22px;border-top:1px solid #f1f5f9;font-size:15.5px"><span style="color:#64748b">{{ r.k }}</span><span style="font-weight:700;text-align:right">{{ r.v }}</span></div>
+        </sc-for>
+      </div>
+      <p style="font-size:14px;color:#64748b;margin:14px 2px 24px">A copy was sent to {{ done.email }}.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <button onClick="{{ goFind }}" style="all:unset;cursor:pointer;border:1.5px solid #0f172a;font-weight:700;font-size:16px;padding:13px 22px;border-radius:10px" style-hover="background:#f1f5f9">Look up a booking</button>
+        <button onClick="{{ bookAnother }}" style="all:unset;cursor:pointer;background:#16a34a;color:#fff;font-weight:700;font-size:16px;padding:14.5px 22px;border-radius:10px" style-hover="background:#15803d">Book another court</button>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{ isFind }}" hint-placeholder-val="{{ false }}">
+    <section style="max-width:640px;margin:0 auto;padding:48px 20px 64px">
+      <div style="font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#c2410c">Your booking</div>
+      <h1 style="font-size:clamp(34px,5vw,48px);font-weight:900;letter-spacing:-.03em;font-stretch:112%;margin:8px 0 10px">Find your booking</h1>
+      <p style="font-size:16.5px;color:#475569;line-height:1.55;margin:0 0 24px">Enter the reference you got after paying and the email you booked with.</p>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:14px">
+        <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:700;font-size:14px">Booking reference</span><input value="{{ findRef }}" onChange="{{ onFindRef }}" placeholder="KC-XXXXXX" style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;letter-spacing:.06em;text-transform:uppercase;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;color:#0f172a"></label>
+        <label style="display:flex;flex-direction:column;gap:6px"><span style="font-weight:700;font-size:14px">Email used for the booking</span><input type="email" value="{{ findEmail }}" onChange="{{ onFindEmail }}" placeholder="you@email.com" style="font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #cbd5e1;border-radius:10px;color:#0f172a"></label>
+        <button onClick="{{ doFind }}" style="all:unset;cursor:pointer;align-self:flex-start;background:#16a34a;color:#fff;font-weight:700;font-size:16px;padding:13px 22px;border-radius:10px" style-hover="background:#15803d">Find booking</button>
+      </div>
+      <sc-if value="{{ findError }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:14px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:14px 16px;font-size:15px">No booking matches that reference and email. Check for typos — references start with KC-.</div>
+      </sc-if>
+      <sc-if value="{{ hasFound }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:14px;background:#fff;border:2px solid #16a34a;border-radius:16px;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;background:#f0fdf4">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:700;font-size:22px;letter-spacing:.04em">{{ found.ref }}</span>
+            <span style="background:#16a34a;color:#fff;font-weight:700;font-size:13px;padding:5px 12px;border-radius:999px">Confirmed</span>
+          </div>
+          <sc-for list="{{ found.rows }}" as="r" hint-placeholder-count="5">
+            <div style="display:flex;justify-content:space-between;gap:16px;padding:13px 22px;border-top:1px solid #f1f5f9;font-size:15.5px"><span style="color:#64748b">{{ r.k }}</span><span style="font-weight:700;text-align:right">{{ r.v }}</span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </section>
+  </sc-if>
+  </main>
+
+  <footer style="border-top:1px solid #e2e8f0">
+    <div style="max-width:1120px;margin:0 auto;padding:22px 20px;font-size:13.5px;color:#64748b;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>Kalaro Courts is a fictional venue. Test mode, no real payments.</span><span>Open daily · 7 AM – 11 PM</span></div>
+  </footer>
+
+  <sc-if value="{{ paying }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:50;background:#0f172acc;display:grid;place-items:center;padding:20px">
+      <div style="background:#fff;border-radius:16px;padding:28px;max-width:360px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;border:3.5px solid #e2e8f0;border-top-color:#16a34a;animation:spin .8s linear infinite"></div>
+        <div style="font-weight:800;font-size:18px">Slot held for 20 minutes</div>
+        <div style="color:#475569;font-size:15px;line-height:1.5">Taking you to PayMongo's test checkout…</div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showBanner&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;book&quot;,&quot;done&quot;,&quot;find&quot;],&quot;default&quot;:&quot;home&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const SPORTS = [
+  { id: 'basketball', label: 'Basketball', courts: 2, color: '#e0662d', rates: { full: [1200, 1600], half: [700, 900] } },
+  { id: 'volleyball', label: 'Volleyball', courts: 2, color: '#d4a017', rates: { full: [1200, 1600] } },
+  { id: 'tennis', label: 'Tennis', courts: 4, color: '#5b9a1e', rates: { full: [500, 700] } },
+  { id: 'badminton', label: 'Badminton', courts: 12, color: '#2b7fc4', rates: { full: [350, 450] } },
+  { id: 'pickleball', label: 'Pickleball', courts: 12, color: '#14958a', rates: { full: [400, 500] } },
+];
+const DAYS = [['Today', 'Sun', 25, true], ['Mon', 'Mon', 26, false], ['Tue', 'Tue', 27, false], ['Wed', 'Wed', 28, false], ['Thu', 'Thu', 29, false], ['Fri', 'Fri', 30, false], ['Sat', 'Sat', 31, true]];
+const NOW_H = 19;
+const peso = n => '₱' + n.toLocaleString('en-US');
+const hr = h => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
+const hash = s => { let x = 2166136261; for (const c of s) { x ^= c.charCodeAt(0); x = Math.imul(x, 16777619); } return (x >>> 0) % 100; };
+const peak = (d, h) => DAYS[d][3] || h >= 17;
+const busy = (u, d, h) => hash(u + ':' + d + ':' + h) < (peak(d, h) ? 40 : 18);
+function opts(sp, cov) {
+  if (sp === 'basketball' && cov === 'half') return [1, 2].flatMap(n => ['A', 'B'].map(x => ({ id: 'B' + n + x, label: `Basketball Court ${n} · Half ${x}`, units: ['B' + n + x] })));
+  if (sp === 'basketball' || sp === 'volleyball') return [1, 2].map(n => ({ id: 'B' + n, label: `Basketball Court ${n}`, units: ['B' + n + 'A', 'B' + n + 'B'] }));
+  if (sp === 'tennis') return [1, 2, 3, 4].map(n => ({ id: 'T' + n, label: `Tennis Court ${n}`, units: ['T' + n] }));
+  return Array.from({ length: 12 }, (_, i) => ({ id: 'M' + (i + 1), label: `Court ${i + 1}`, units: ['M' + (i + 1)] }));
+}
+const isFree = (o, d, s, dur) => { for (let h = s; h < s + dur; h++) for (const u of o.units) if (busy(u, d, h)) return false; return true; };
+const quote = (sp, cov, d, s, dur) => { const r = sp.rates[cov]; let t = 0; for (let h = s; h < s + dur; h++) t += peak(d, h) ? r[1] : r[0]; return t; };
+const FAQS = [
+  ['How long is my slot held?', 'Your slot is held for 20 minutes while you pay. If the hold runs out, the slot is released.'],
+  ['How do I pay?', "Online through PayMongo's test checkout — card or e-wallet. No real money is charged."],
+  ['How far ahead can I book?', 'Up to 7 days ahead, for 1 to 3 hours, starting on the hour.'],
+  ['What counts as peak time?', 'Weekdays from 5 PM, and all day on Saturdays and Sundays.'],
+  ['Can I book half a basketball court?', 'Yes. Each basketball court splits into Half A and Half B, and each half is booked separately.'],
+  ['How do I find my booking again?', 'Use Find booking with your KC- reference and the email you booked with.'],
+  ['Is this a real venue?', 'No. Kalaro Courts is a fictional venue running in test mode.'],
+];
+const DEMO = { ref: 'KC-G1KQGQ', email: 'alessandrorafaelcruz@gmail.com', rows: [['Court', 'Basketball Court 1'], ['Sport', 'Basketball, full court'], ['Date', 'Fri, 30 Oct 2026'], ['Time', '8 AM – 11 AM (3 hours)'], ['Amount paid', '₱3,600'], ['Payment method', 'Card']] };
+
+class Component extends DCLogic {
+  state = { screen: null, sport: null, cov: 'full', day: 0, dur: 1, start: null, opt: null, name: '', email: '', mobile: '', agree: false, paying: false, booking: null, copied: false, findRef: '', findEmail: '', found: null, findError: false, faq: 0, narrow: false };
+  componentDidMount() { this.onR = () => this.setState({ narrow: window.innerWidth < 900 }); this.onR(); window.addEventListener('resize', this.onR); }
+  componentWillUnmount() { window.removeEventListener('resize', this.onR); clearTimeout(this.t); }
+  go(screen, extra) { this.setState({ screen, ...extra }); window.scrollTo(0, 0); }
+  pick(p) { this.setState({ start: null, opt: null, ...p }); }
+  renderVals() {
+    const s = this.state, P = this.props;
+    const screen = s.screen ?? P.startScreen ?? 'home';
+    const sp = SPORTS.find(x => x.id === s.sport);
+    const cov = sp && sp.rates[s.cov] ? s.cov : 'full';
+    const options = sp ? opts(sp.id, cov) : [];
+    const pastCut = s.day === 0 ? NOW_H : 6;
+    const times = [];
+    if (sp) for (let h = Math.max(7, pastCut + 1); h <= 23 - s.dur; h++) {
+      const free = options.filter(o => isFree(o, s.day, h, s.dur)).length;
+      const pk = peak(s.day, h), sel = s.start === h, dis = free === 0;
+      times.push({ label: hr(h), price: dis ? 'Booked' : peso(quote(sp, cov, s.day, h, s.dur)), left: dis ? '—' : free === 1 ? '1 court left' : `${free} free`, disabled: dis, cursor: dis ? 'not-allowed' : 'pointer', op: dis ? .5 : 1,
+        bd: sel ? '#16a34a' : '#e2e8f0', bg: sel ? '#16a34a' : dis ? '#f8fafc' : '#fff', fg: sel ? '#fff' : '#0f172a', priceColor: sel ? '#fff' : dis ? '#94a3b8' : pk ? '#c2410c' : '#334155', subColor: sel ? '#dcfce7' : free === 1 ? '#c2410c' : '#64748b',
+        onClick: () => !dis && this.setState({ start: h, opt: null }) });
+    }
+    const freeCourts = sp && s.start != null ? options.filter(o => isFree(o, s.day, s.start, s.dur)) : [];
+    const selOpt = freeCourts.find(o => o.id === s.opt) || freeCourts[0];
+    const ready = !!(sp && selOpt);
+    const tot = ready ? quote(sp, cov, s.day, s.start, s.dur) : 0;
+    let pk = 0; if (ready) for (let h = s.start; h < s.start + s.dur; h++) if (peak(s.day, h)) pk++;
+    const valid = ready && s.name.trim() && /.+@.+\..+/.test(s.email) && s.mobile.trim().length >= 7 && s.agree;
+    const stepMark = (done, active, n) => ({ bg: done ? '#16a34a' : active ? '#0f172a' : '#e2e8f0', fg: done || active ? '#fff' : '#64748b', mark: done ? '✓' : n });
+    const dayLbl = `${DAYS[s.day][1]} ${DAYS[s.day][2]} Oct`;
+    const covLabel = sp ? (sp.id === 'basketball' ? (cov === 'half' ? 'Half court' : 'Full court') : 'Full court') : '';
+    const rate = sp ? sp.rates[cov] : null;
+    const lines = [];
+    if (ready) { if (s.dur - pk) lines.push({ k: `Off-peak · ${s.dur - pk}h × ${peso(rate[0])}`, v: peso((s.dur - pk) * rate[0]) }); if (pk) lines.push({ k: `Peak · ${pk}h × ${peso(rate[1])}`, v: peso(pk * rate[1]) }); }
+    const d0 = (v) => v ? '#0f172a' : '#94a3b8';
+    const book = s.booking || DEMO;
+    const tonight = SPORTS.map(x => {
+      let n = null; for (let h = NOW_H + 1; h <= 22 && n == null; h++) if (opts(x.id, 'full').some(o => isFree(o, 0, h, 1))) n = h;
+      return { label: x.label, color: x.color, next: n == null ? 'Full tonight' : `Next free ${hr(n)}`, nextColor: n == null ? '#94a3b8' : '#15803d', onClick: () => this.go('book', { sport: x.id, cov: 'full', day: n == null ? 1 : 0, start: n, opt: null }) };
+    });
+    return {
+      showBanner: P.showBanner ?? true,
+      isHome: screen === 'home', isBook: screen === 'book', isDone: screen === 'done', isFind: screen === 'find',
+      bottomPad: screen === 'book' && s.narrow && sp ? '84px' : '0',
+      goHome: () => this.go('home'), goBook: () => this.go('book'), goFind: () => this.go('find', { found: null, findError: false }),
+      tonight,
+      rateRows: SPORTS.flatMap(x => Object.entries(x.rates).map(([c, r]) => ({ label: x.label, sub: x.id === 'basketball' ? (c === 'half' ? 'Half court' : 'Full court') : '', color: x.color, courts: x.courts + ' courts', off: peso(r[0]), peak: peso(r[1]) }))),
+      steps: [{ n: '1', t: 'Pick', d: 'Choose a sport, a day and a start time.' }, { n: '2', t: 'Hold', d: 'We hold your slot for 20 minutes.' }, { n: '3', t: 'Pay', d: "Pay on PayMongo's test checkout." }, { n: '4', t: 'Show your reference', d: 'Give your KC- reference at the front desk.' }],
+      faqs: FAQS.map(([q, a], i) => ({ q, a, open: s.faq === i, icon: s.faq === i ? '−' : '+', onClick: () => this.setState({ faq: s.faq === i ? -1 : i }) })),
+      bookCols: s.narrow ? 'minmax(0,1fr)' : 'minmax(0,1fr) 340px',
+      step1: stepMark(!!sp, !sp, 1), step2: stepMark(!!sp, false, 2), step3: stepMark(ready, !!sp && !ready, 3), step4: stepMark(valid, ready && !valid, 4),
+      sports: SPORTS.map(x => { const sel = x.id === s.sport; return { ...x, from: peso(Math.min(...Object.values(x.rates).map(r => r[0]))), bd: sel ? '#16a34a' : '#e2e8f0', bg: sel ? '#f0fdf4' : '#fff', onClick: () => this.pick({ sport: x.id, cov: 'full' }) }; }),
+      showCov: s.sport === 'basketball',
+      covOpts: [['full', 'Full court', '₱1,200 – ₱1,600 / hour'], ['half', 'Half court', 'Half A or B · ₱700 – ₱900 / hour']].map(([id, label, sub]) => { const sel = cov === id; return { label, sub, bd: sel ? '#16a34a' : '#e2e8f0', bg: sel ? '#f0fdf4' : '#fff', dot: sel ? '#16a34a' : '#cbd5e1', dotFill: sel ? '#16a34a' : 'transparent', onClick: () => this.pick({ cov: id }) }; }),
+      days: DAYS.map((d, i) => { const sel = i === s.day; return { top: d[0], num: d[2], peakLabel: d[3] ? 'PEAK' : '', peakColor: sel ? '#fed7aa' : '#c2410c', bd: sel ? '#0f172a' : '#e2e8f0', bg: sel ? '#0f172a' : '#fff', fg: sel ? '#fff' : '#0f172a', onClick: () => this.pick({ day: i }) }; }),
+      durs: [1, 2, 3].map(n => { const sel = n === s.dur; return { label: n === 1 ? '1 hour' : `${n} hours`, bg: sel ? '#fff' : 'transparent', fg: sel ? '#0f172a' : '#64748b', sh: sel ? '0 1px 3px #0f172a26' : 'none', onClick: () => this.pick({ dur: n }) }; }),
+      durLabel: s.dur === 1 ? '1 hour' : `${s.dur} hours`,
+      noSport: !sp, hasTimes: !!sp && times.length > 0, noTimes: !!sp && (times.length === 0 || times.every(t => t.disabled)), pastNote: !!sp && s.day === 0,
+      times,
+      hasCourts: freeCourts.length > 0, courtCount: freeCourts.length, startLabel: s.start != null ? hr(s.start) : '',
+      courts: freeCourts.map(o => { const sel = selOpt && o.id === selOpt.id; return { label: o.label, bd: sel ? '#0f172a' : '#e2e8f0', bg: sel ? '#0f172a' : '#fff', fg: sel ? '#fff' : '#0f172a', onClick: () => this.setState({ opt: o.id }) }; }),
+      detailsOp: ready ? 1 : .6,
+      name: s.name, email: s.email, mobile: s.mobile, agree: s.agree,
+      onName: e => this.setState({ name: e.target.value }), onEmail: e => this.setState({ email: e.target.value }), onMobile: e => this.setState({ mobile: e.target.value }), onAgree: e => this.setState({ agree: e.target.checked }),
+      sumSport: !!sp, sumColor: sp ? sp.color : '', sumSportLabel: sp ? sp.label : '',
+      summary: [
+        { k: 'Court', v: ready ? selOpt.label : '—', c: d0(ready) },
+        { k: 'Coverage', v: sp ? covLabel : '—', c: d0(sp) },
+        { k: 'Date', v: dayLbl, c: '#0f172a' },
+        { k: 'Time', v: s.start != null ? `${hr(s.start)} – ${hr(s.start + s.dur)}` : '—', c: d0(s.start != null) },
+      ],
+      hasPrice: ready, lines, total: peso(tot),
+      notValid: !valid, payBg: valid ? '#16a34a' : '#e2e8f0', payFg: valid ? '#fff' : '#94a3b8', payCursor: valid ? 'pointer' : 'not-allowed',
+      payHint: valid ? "You'll pay on PayMongo's test checkout. Your slot is held for 20 minutes." : !sp ? 'Pick a sport to get started.' : !ready ? 'Pick a start time.' : 'Add your details to continue.',
+      showBar: screen === 'book' && s.narrow && !!sp,
+      barSub: ready ? `${sp.label} · ${dayLbl} · ${hr(s.start)}–${hr(s.start + s.dur)}` : 'Pick a start time',
+      pay: () => {
+        if (!valid) return;
+        const ref = 'KC-' + Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+        const booking = { ref, email: s.email, rows: [['Court', selOpt.label], ['Sport', `${sp.label}, ${covLabel.toLowerCase()}`], ['Date', `${DAYS[s.day][1]}, ${DAYS[s.day][2]} Oct 2026`], ['Time', `${hr(s.start)} – ${hr(s.start + s.dur)} (${s.dur === 1 ? '1 hour' : s.dur + ' hours'})`], ['Amount paid', peso(tot)], ['Payment method', 'Card']] };
+        this.setState({ paying: true });
+        this.t = setTimeout(() => this.go('done', { paying: false, booking, copied: false }), 1500);
+      },
+      paying: s.paying,
+      done: { ref: book.ref, email: book.email, rows: book.rows.map(([k, v]) => ({ k, v })) },
+      copyLabel: s.copied ? 'Copied' : 'Copy',
+      copyRef: () => { try { navigator.clipboard.writeText(book.ref); } catch (e) {} this.setState({ copied: true }); },
+      bookAnother: () => this.go('book', { sport: null, start: null, opt: null }),
+      findRef: s.findRef, findEmail: s.findEmail,
+      onFindRef: e => this.setState({ findRef: e.target.value }), onFindEmail: e => this.setState({ findEmail: e.target.value }),
+      doFind: () => {
+        const r = s.findRef.trim().toUpperCase(), em = s.findEmail.trim().toLowerCase();
+        const hit = [s.booking, DEMO].find(b => b && b.ref === r && b.email.toLowerCase() === em);
+        this.setState({ found: hit || null, findError: !hit });
+      },
+      findError: s.findError, hasFound: !!s.found,
+      found: s.found ? { ref: s.found.ref, rows: s.found.rows.filter(r => r[0] !== 'Payment method').map(([k, v]) => ({ k, v })) } : { ref: '', rows: [] },
+    };
+  }
+}
+</script>
+</body>
+</html>

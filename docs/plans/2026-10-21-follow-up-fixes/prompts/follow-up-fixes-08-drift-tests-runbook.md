@@ -27,7 +27,7 @@ files:
 3. Add one runbook line about manual nightly runs.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Python 3.14, uv, pytest-django). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Python 3.14, uv, pytest-django). Tests run
   on Postgres at `localhost:54329`.
 - Constants:
   - `bookings/management/commands/nightly.py`: `RETENTION_DAYS = 7` (comment: must match the web) and
@@ -75,7 +75,7 @@ files:
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm format:check
 pnpm --filter @cb/backend lint

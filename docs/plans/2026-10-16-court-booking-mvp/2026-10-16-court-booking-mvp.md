@@ -97,7 +97,7 @@ Clarified with the user on 2026-10-16. **Architecture A**: Django is the core an
 | `packages/config/**`, `packages/env/**` | C | Shared lint, format and tsconfig, plus `createEnv` | R1 | 01 |
 | `apps/backend/{package.json,pyproject.toml,uv.lock,.python-version,manage.py,.env.example,conftest.py}` | C | Django workspace, wired into Turbo | R1 | 02 |
 | `apps/backend/config/{__init__,env,settings,settings_test,urls,wsgi,gunicorn.conf}.py` | C | Settings that are Neon-safe, Cloud Run-safe and readable with no env at build | R1 R2 R3 | 02 |
-| `apps/backend/core/{__init__,apps,views,logging}.py`, `core/tests/{__init__,test_health,test_env,test_logging}.py` | C | `/healthz` (no DB), env validation, exception redaction in logs | R3 | 02 |
+| `apps/backend/core/{__init__,apps,views,logging}.py`, `core/tests/{__init__,test_health,test_env,test_logging}.py` | C | `/health` (no DB), env validation, exception redaction in logs | R3 | 02 |
 | `compose.yaml` | C | Local and test Postgres 17 | R2 | 02 |
 | `turbo.json`, root `package.json` | M | Env passthrough; `format` also runs ruff | R1 | 02 |
 | `apps/web/{package.json,next.config.ts,tsconfig.json,eslint.config.js,postcss.config.mjs,vitest.config.ts,.env.example,proxy.ts}` | C | Next.js storefront shell, standalone output | R1 R3 | 03 |
@@ -178,7 +178,7 @@ There is no existing code, so nothing in this repo can break. The radius is the 
 ## Units
 | Unit | Title | Category | Prompts | Depends | High-stakes | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| CBS-2 | Monorepo scaffold, CI and project profile | Added | 01, 02, 03, 04 | — | yes | R1: `pnpm install/lint/typecheck/test/build` pass at the root across `@cb/web`, `@cb/backend`, `@cb/env`. Django `/healthz` and Next `/api/health` answer 200 `no-store`. The banner shows on every page. CI is green with Postgres and gitleaks. |
+| CBS-2 | Monorepo scaffold, CI and project profile | Added | 01, 02, 03, 04 | — | yes | R1: `pnpm install/lint/typecheck/test/build` pass at the root across `@cb/web`, `@cb/backend`, `@cb/env`. Django `/health` and Next `/api/health` answer 200 `no-store`. The banner shows on every page. CI is green with Postgres and gitleaks. |
 | CBS-3 | Container images and Cloud Run deploy | Added | 05, 06 | CBS-2 | yes | R3: both images build with no env and run as non-root. The CI smoke run hits both health routes. `deploy.yml` deploys `cb-web` and `cb-backend` (min 0 / max 1) and the job `cb-nightly` through WIF, and it is skipped until the GCP variables exist. |
 | CBS-4 | Booking engine: courts, rules, holds | Added | 07, 08, 09 | CBS-3 | yes | R5–R7: the 18 courts are seeded. Half/full/volleyball/sport rules, 07:00–23:00, a 7-day window and 1–3 h are enforced. Concurrent overlapping holds produce exactly one winner. `cb_app` can't run DDL. |
 | CBS-5 | PayMongo payments | Added | 10, 11 | CBS-4 | yes | R4: only test keys are accepted. The webhook verifies the signature before any DB access. Confirmation is idempotent and amount-checked. A late payment is reacquired or becomes `needs_refund`. |
@@ -265,7 +265,7 @@ pnpm turbo run lint --dry=json | grep -E '"@cb/(web|backend)#lint"'
 (cd apps/backend && uv run pytest core/tests/test_grants.py -q)
 
 # R3 (after the owner setup in the runbook): Actions → Deploy is green, then
-curl -fsS "$BACKEND_URL/healthz" && curl -fsS "$WEB_URL/api/health"
+curl -fsS "$BACKEND_URL/health" && curl -fsS "$WEB_URL/api/health"
 gcloud run services describe cb-web --region asia-southeast1 --format='value(spec.template.metadata.annotations)' | grep -E 'maxScale.: .1'
 # R4 R8 R10 (manual, test mode): book a tennis court on $WEB_URL with test card 4343 4343 4343 4345,
 #   see the confirmed reference, look it up on /booking, open /staff → "Explore the owner demo",

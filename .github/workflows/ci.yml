@@ -110,10 +110,10 @@ jobs:
           )
           docker run -d --name backend -p 8081:8080 -e DJANGO_SECRET_KEY="$secret_key" "${env_args[@]}" cb-backend:ci
           for _ in $(seq 30); do
-            curl -fsS localhost:8081/healthz && break
+            curl -fsS localhost:8081/health && break
             sleep 1
           done
-          curl -fsS localhost:8081/healthz
+          curl -fsS localhost:8081/health
           uid="$(docker exec backend id -u)"
           test "$uid" != 0
           # Fail-fast env validation: without DJANGO_SECRET_KEY, gunicorn must exit non-zero at

@@ -22,7 +22,7 @@ Append a pre-release owner checklist to `docs/runbook.md`, and a "Demo in 3 minu
 documentation only. Every fact below is given; don't invent others.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Read `docs/runbook.md` first. It already has these
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Read `docs/runbook.md` first. It already has these
   sections: Local development, Neon (once), Cloud Run (once), Deploy, Roll back, Database roles and migrations,
   PayMongo (test mode), Demo data and nightly job, and Staff dashboard. Link to them by heading instead of repeating them.
 - Append **`## Pre-release checklist`** to `docs/runbook.md` as a `- [ ]` list in this order:
@@ -84,7 +84,7 @@ documentation only. Every fact below is given; don't invent others.
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 grep -n '## Pre-release checklist' docs/runbook.md
 grep -n '## Demo in 3 minutes' README.md
 grep -c '^- \[ \]' docs/runbook.md          # at least 12

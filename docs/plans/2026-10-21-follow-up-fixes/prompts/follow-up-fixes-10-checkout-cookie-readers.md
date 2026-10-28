@@ -30,7 +30,7 @@ The writer (`startCheckout`) moves to the new format in prompt 11. Until then, t
 cookie.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Web: `apps/web` (Next.js 16, React 19, TypeScript, zod, vitest).
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Web: `apps/web` (Next.js 16, React 19, TypeScript, zod, vitest).
   Package `@cb/web`.
 - Review constraints:
   - "Payment status comes only from the server … URL parameters are never trusted." `ref` only selects among the
@@ -103,7 +103,7 @@ cookie.
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 pnpm format:check
 pnpm --filter @cb/web lint
 pnpm --filter @cb/web typecheck

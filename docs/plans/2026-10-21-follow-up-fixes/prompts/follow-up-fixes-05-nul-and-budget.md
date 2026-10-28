@@ -26,7 +26,7 @@ files:
 2. The demo viewer's write budget (`_viewer_write_allowed`) is charged only by a create whose form is valid.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - Postgres refuses NUL in text, and psycopg raises `ValueError` before the query runs, so these crash with a 500:
   - `dashboard/urls.py` `<str:reference>` paths → `dashboard/schedule.py:228-230` `get_booking(reference)` (used by
@@ -72,7 +72,7 @@ files:
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

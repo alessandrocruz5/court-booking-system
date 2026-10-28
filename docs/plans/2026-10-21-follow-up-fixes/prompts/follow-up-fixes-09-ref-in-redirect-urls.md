@@ -22,7 +22,7 @@ The PayMongo checkout session's `success_url` and `cancel_url` carry the booking
 so the web's result pages can tell which of a browser's checkouts PayMongo is returning from.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - Why: the web keeps one `cb_checkout` cookie per browser. With two tabs checking out, the second overwrites the
   first, so tab A's success page checks B's session, and A's cancel releases B's hold. Prompts 10–11 make the cookie
@@ -54,7 +54,7 @@ so the web's result pages can tell which of a browser's checkouts PayMongo is re
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

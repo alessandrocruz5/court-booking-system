@@ -28,7 +28,7 @@ check `check_checkout()` and the cancel-page release `release_checkout()`. Also 
 `POST /webhooks/paymongo`. Port fun-run's semantics and add late-payment handling for expired holds.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv;
   tests on Postgres at `localhost:54329`).
 - **Source to port, read only**:
   - `/Users/alessandrocruz/Code/fun-run-website/apps/web/src/lib/registration/confirm.ts:43-84` (`logError`, which logs
@@ -146,7 +146,7 @@ check `check_checkout()` and the cancel-page release `release_checkout()`. Also 
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

@@ -34,7 +34,7 @@ validation, a Hosted Checkout client (create, retrieve, expire), and webhook sig
 the same semantics and the same safety properties. Tests use `httpx.MockTransport`, with no network.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv,
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1, Python 3.14, uv,
   ruff, pytest against Postgres at `localhost:54329`).
 - **Source to port, read only** (keep every behaviour and the doc comments' intent):
   - `/Users/alessandrocruz/Code/fun-run-website/packages/payments/src/env.ts`
@@ -123,7 +123,7 @@ the same semantics and the same safety properties. Tests use `httpx.MockTranspor
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test

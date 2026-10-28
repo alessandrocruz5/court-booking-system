@@ -24,7 +24,7 @@ files:
    `storefront.views` use it in place of its own `_client_ip`.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Backend: `apps/backend` (Django 6.1.2, Python 3.14, uv). Tests run
   on Postgres at `localhost:54329`.
 - **gunicorn** 26.2.0 (`uv.lock`) creates a control socket in `~/.gunicorn` by default. The setting
   `control_socket_disable` (since 25.1.0) turns it off. In `config/gunicorn.conf.py`, add
@@ -52,12 +52,12 @@ files:
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 docker compose up -d --wait db
 pnpm --filter @cb/backend lint
 pnpm --filter @cb/backend test
 cd apps/backend && uv run python -c "import runpy; assert runpy.run_path('config/gunicorn.conf.py')['control_socket_disable'] is True"
-cd /home/apa/Code/court-booking-system && ! grep -rnw --include='*.py' -e '_client_ip' -e '_normalise' apps/backend
+cd /home/apa/Code/portfolio/court-booking-system && ! grep -rnw --include='*.py' -e '_client_ip' -e '_normalise' apps/backend
 docker build -t cb-backend:local apps/backend
 ```
 - The image still starts and fails fast without env, as the CI `images` job checks.

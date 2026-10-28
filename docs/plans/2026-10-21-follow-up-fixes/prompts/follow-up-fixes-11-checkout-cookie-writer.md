@@ -27,7 +27,7 @@ files:
 4. Update `CLAUDE.md`'s cookie coupling line and the payment-status constraint wording.
 
 ## Context
-- Repo root: `/home/apa/Code/court-booking-system`. Web: `apps/web` (Next.js 16, TypeScript, zod, vitest).
+- Repo root: `/home/apa/Code/portfolio/court-booking-system`. Web: `apps/web` (Next.js 16, TypeScript, zod, vitest).
 - Prompt 10 added `src/lib/booking/checkout-cookie.ts`: `CHECKOUT_COOKIE`, `MAX_CHECKOUTS`, `isReference`,
   `parseCheckouts`, `addCheckout(value, { reference, sessionId })` and `pickCheckout(value, ref)`. Read it first. The
   result pages already read both formats and pass `?ref=`. The backend's success/cancel URLs carry `?ref=<reference>`
@@ -78,7 +78,7 @@ files:
 
 ## Done when
 ```bash
-cd /home/apa/Code/court-booking-system
+cd /home/apa/Code/portfolio/court-booking-system
 pnpm format:check
 pnpm --filter @cb/web lint
 pnpm --filter @cb/web typecheck

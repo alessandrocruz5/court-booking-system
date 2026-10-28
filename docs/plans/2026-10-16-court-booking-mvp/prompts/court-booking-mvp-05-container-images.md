@@ -28,7 +28,7 @@ Write production Dockerfiles for both apps, for Cloud Run. They must be multi-st
 add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Commands`.
 
 ## Context
-- Repo root: `/Users/alessandrocruz/Code/court-booking-system`. There is no Dockerfile to copy: fun-run deployed on
+- Repo root: `/Users/alessandrocruz/Code/portfolio/court-booking-system`. There is no Dockerfile to copy: fun-run deployed on
   Vercel, and the only other Dockerfile on this machine runs as root, so it's not a pattern to follow.
 - **Web image** (`apps/web/Dockerfile`, build context = **repo root**: `docker build -f apps/web/Dockerfile .`):
   - `apps/web` is Next.js 16 with `output: "standalone"` and `outputFileTracingRoot` set to the monorepo root, so the
@@ -76,7 +76,7 @@ add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Co
     Run `-p 8081:8080` with `DJANGO_SECRET_KEY` set to it,
     `DATABASE_URL=postgres://ci:ci@127.0.0.1:5432/ci` (never connected), `ALLOWED_HOSTS=localhost`,
     `CSRF_TRUSTED_ORIGINS=http://localhost:8081`, `SITE_URL=http://localhost:8080` and `INTERNAL_API_TOKEN` (a random
-    40-character value generated the same way). Poll `curl -fsS localhost:8081/healthz`. Assert the container user isn't
+    40-character value generated the same way). Poll `curl -fsS localhost:8081/health`. Assert the container user isn't
     root. Then assert that starting it **without** `DJANGO_SECRET_KEY` exits non-zero (fail-fast env validation).
   - Mark the generated values `# gitleaks:allow` only if the scan flags them. They're generated, never committed.
 - **`.github/dependabot.yml`**: add `docker` entries for `/apps/web` and `/apps/backend`, weekly.
@@ -93,7 +93,7 @@ add Docker to Dependabot, and add the two build commands to `CLAUDE.md`'s `## Co
 
 ## Done when
 ```bash
-cd /Users/alessandrocruz/Code/court-booking-system
+cd /Users/alessandrocruz/Code/portfolio/court-booking-system
 docker build -f apps/web/Dockerfile -t cb-web:local .
 docker build -t cb-backend:local apps/backend
 docker run --rm cb-web:local id -u | grep -vx 0

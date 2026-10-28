@@ -25,7 +25,7 @@ pnpm install
 docker compose up -d --wait db
 ```
 
-Backend (`@cb/backend`, <http://localhost:8000>, health check at `/healthz`):
+Backend (`@cb/backend`, <http://localhost:8000>, health check at `/health`):
 
 1. `cp apps/backend/.env.example apps/backend/.env`. The template documents every key, and `.env` is gitignored.
 2. Generate a `DJANGO_SECRET_KEY` and paste it into `apps/backend/.env`:
@@ -69,7 +69,7 @@ pnpm build
 
 Free plan limits: 100 CU-hours of compute per month, and the compute scales to zero after 5 minutes without
 connections. Any request that reaches the database wakes it and spends CU-hours, which is why there are no keep-warm
-pings or uptime checks that touch the database, and why both health checks (`/healthz`, `/api/health`) answer without
+pings or uptime checks that touch the database, and why both health checks (`/health`, `/api/health`) answer without
 querying it.
 
 ## Cloud Run (once)
@@ -217,7 +217,7 @@ gcloud config set project "$PROJECT_ID"
 
 The **Deploy** workflow (`.github/workflows/deploy.yml`) runs after every green CI run of a push to `main`. It
 builds both images at the commit CI tested, pushes them to Artifact Registry as `web:<sha>` and `backend:<sha>`,
-deploys `cb-backend` and `cb-web`, updates the job `cb-nightly`, and smoke-checks `/healthz` and `/api/health`. It
+deploys `cb-backend` and `cb-web`, updates the job `cb-nightly`, and smoke-checks `/health` and `/api/health`. It
 is skipped while the `GCP_PROJECT_ID` variable is unset.
 
 1. To redeploy by hand (after a secret change, say): Actions → Deploy → Run workflow, on `main`. The identity pool
