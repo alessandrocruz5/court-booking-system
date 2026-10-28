@@ -18,7 +18,9 @@
 
 ## Workflow
 
-- Base branch: main
+- Base branch: develop
+- Release: before a `develop → main` PR, apply pending migrations with `MIGRATE_DATABASE_URL` on Neon `dev`, then
+  `main` ([docs/runbook.md](docs/runbook.md), Database roles and migrations).
 
 ## Commands
 
@@ -101,6 +103,8 @@ A diff touching any of these gets the code-guardian review before merge, on top 
   `apps/web/src/lib/booking/checkout-cookie.ts`, written by `startCheckout` in `apps/web/src/lib/booking/actions.ts`,
   read by `app/book/{success,cancelled}`. The backend's success/cancel URLs (`storefront/views.py`) carry `?ref=`.
 - **Demo markers**: `is_demo`, `@example.com`, `+63900000xxxx`, used by `seed_demo`, `nightly` and the dashboard.
+- **Privacy notice**: `apps/web/app/privacy/page.tsx` ↔ the `Booking` columns ↔ `nightly.anonymize` ↔ the runbook's
+  nightly step 2. A newly stored field, or a change to what anonymization clears, updates `/privacy` before release.
 - **Cloud names**: region `asia-southeast1`, Artifact Registry `cb`, services `cb-web`/`cb-backend`, job `cb-nightly`.
 - **Test DB seed data**: the 18 courts come from migration `bookings/0002_courts`. Django empties every table after
   each `django_db(transaction=True)` test, and pytest-django runs those last, so every transactional test uses

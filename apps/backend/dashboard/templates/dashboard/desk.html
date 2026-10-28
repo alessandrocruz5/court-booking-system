@@ -1,0 +1,174 @@
+{% extends "dashboard/base.html" %}
+{% comment %}
+The Front desk: a reference lookup (a plain GET form, so it works without JS), the booking it finds,
+today's numbers, who is arriving next and who is on court now.
+
+Every value arrives from `dashboard.desk`, already masked for the viewer's role, and every permission
+(`can_check_in`) was decided on the server: the template only reflects it.
+Partials, rendered alone for htmx as `dashboard/desk.html#<name>`:
+  desk     the whole desk (swapped as the outerHTML of #desk), plus an out-of-band toast and nav badge
+           after a check-in
+  suggest  the lookup's suggestions (swapped into #suggest)
+A nameless booking reads "Blocked" for a block and "Walk-in" while it is live (an online booking
+always carries a name until it is anonymized, 7 days after it ends); anything else reads "—".
+No inline scripts, no hx-on, no inline styles: everything is a `.desk-*` class in `dashboard.css`.
+{% endcomment %}
+{% block dashboard_title %}Front desk{% endblock %}
+{% block dashboard_heading %}Front desk{% endblock %}
+{% block dashboard_nav_badge %}<span id="desk-badge" class="nav-badge">{% if arriving %}{{ arriving|length }}<span class="visually-hidden"> arriving next</span>{% endif %}</span>{% endblock %}
+
+{% block dashboard_content %}
+  {% partialdef desk inline %}
+    <div id="desk" class="desk">
+      <div class="desk-main">
+        <section class="desk-lookup" aria-labelledby="desk-lookup-title">
+          <h2 id="desk-lookup-title" class="desk-lookup-title">Check in a customer</h2>
+          <p class="desk-lookup-sub">Type their reference, or search by name.</p>
+          {% url 'dashboard:desk' as desk_url %}
+          <form class="desk-lookup-form" method="get" action="{{ desk_url }}" role="search">
+            <label for="desk-q" class="visually-hidden">Booking reference or customer name</label>
+            <input id="desk-q" class="desk-input" type="text" name="q" value="{{ query_text }}" placeholder="KC-XXXXXX" maxlength="60" autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus hx-get="{% url 'dashboard:desk_suggest' %}" hx-trigger="input changed delay:250ms" hx-target="#suggest">
+            <button type="submit" class="btn btn-primary desk-lookup-btn">Look up</button>
+          </form>
+          <div id="suggest" aria-live="polite">
+            {% partialdef suggest inline %}
+              {% if suggestions %}
+                <ul class="desk-suggest-list" aria-label="Matching bookings">
+                  {% for suggestion in suggestions %}
+                    <li><a class="desk-suggest-row" href="{% url 'dashboard:desk' %}?q={{ suggestion.reference|urlencode }}"><span class="desk-ref">{{ suggestion.reference }}</span><span class="desk-suggest-name">{{ suggestion.name }}</span><span class="desk-suggest-when">{{ suggestion.when }}</span></a></li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            {% endpartialdef %}
+          </div>
+          {% if hints %}
+            <p class="desk-hint">Try {% for reference in hints %}{% if not forloop.first %} or {% endif %}<a class="desk-ref" href="{{ desk_url }}?q={{ reference|urlencode }}">{{ reference }}</a>{% endfor %}</p>
+          {% endif %}
+        </section>
+
+        {% if message %}
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        {% endif %}
+
+        {% if not_found %}
+          <p class="desk-warn" role="status"><strong>No booking found for {{ query }}.</strong> Check the code with the customer, or search their name.</p>
+        {% endif %}
+
+        {% if result %}
+          <article class="desk-result{% if result.can_check_in %} desk-result-ready{% endif %}" aria-labelledby="desk-result-name">
+            <div class="desk-result-head">
+              <div class="desk-result-who">
+                <p class="desk-result-ref"><span class="desk-ref">{{ result.reference }}</span> <span class="pill {{ result.pill }}">{{ result.status_label }}</span></p>
+                <h2 id="desk-result-name" class="desk-result-name">{% if result.name %}{{ result.name }}{% elif result.status_key == "block" %}Blocked{% elif result.status_key == "pending" or result.status_key == "confirmed" or result.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</h2>
+                {% if result.contact %}<p class="desk-result-contact">{{ result.contact }}</p>{% endif %}
+              </div>
+              {% if result.amount %}
+                <p class="desk-result-amount"><span class="desk-result-amount-label">{% if result.status_key == "pending" %}Due{% else %}Paid{% endif %}</span> <span class="desk-result-amount-value">{{ result.amount }}</span></p>
+              {% endif %}
+            </div>
+            <dl class="desk-facts">
+              <div><dt>Court</dt><dd>{{ result.court }}</dd></div>
+              <div><dt>Sport</dt><dd>{{ result.sport|default:"—" }}</dd></div>
+              <div><dt>Time</dt><dd>{{ result.time }}</dd></div>
+            </dl>
+            {% if result.warning %}
+              <p class="desk-result-warn">{{ result.warning }}</p>
+            {% endif %}
+            <div class="desk-result-foot">
+              {% if result.can_check_in %}
+                <form method="post" action="{% url 'dashboard:check_in' result.reference %}" hx-post="{% url 'dashboard:check_in' result.reference %}" hx-target="#desk" hx-swap="outerHTML">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-primary desk-check-in">Check in</button>
+                </form>
+              {% elif result.checked_in_clock %}
+                <p class="desk-checked-in"><span aria-hidden="true">✓</span> Checked in at {{ result.checked_in_clock }}</p>
+              {% endif %}
+              <a class="btn btn-ghost btn-sm desk-result-open" href="{% url 'dashboard:schedule' %}?date={{ result.schedule_day|date:'Y-m-d' }}">View in schedule</a>
+            </div>
+          </article>
+        {% endif %}
+
+        <div class="desk-stats">
+          <div class="stat">
+            <p class="stat-label">Bookings today</p>
+            <p class="stat-value">{{ stats.bookings }}</p>
+            <p class="stat-sub">{{ stats.walk_ins }} walk-in{{ stats.walk_ins|pluralize }}</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Revenue today</p>
+            <p class="stat-value">{{ stats.revenue_display }}</p>
+            <p class="stat-sub">Online + cash</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Courts in use</p>
+            <p class="stat-value">{{ stats.spaces_in_use }}/{{ stats.space_count }}</p>
+            <p class="stat-sub">Right now</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Active holds</p>
+            <p class="stat-value">{{ stats.active_holds }}</p>
+            <p class="stat-sub">Unpaid, {{ hold_minutes }} min</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="desk-side">
+        <section class="desk-card" aria-labelledby="desk-arriving-title">
+          <header class="desk-card-head">
+            <h2 id="desk-arriving-title" class="desk-card-title">Arriving next</h2>
+            <p class="desk-card-meta">Next {{ upcoming_hours }} hours</p>
+          </header>
+          {% if arriving %}
+            <ul class="desk-rows">
+              {% for row in arriving %}
+                <li class="desk-row">
+                  <p class="desk-row-time">{{ row.starts }}{% if row.tag %}<span class="desk-row-tag desk-row-tag-{{ row.tag }}">{{ row.tag|upper }}</span>{% endif %}</p>
+                  <div class="desk-row-who">
+                    <p class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}<a href="{% url 'dashboard:desk' %}?q={{ row.reference|urlencode }}">{% if row.name %}{{ row.name }}{% elif row.status_key == "block" %}Blocked{% elif row.status_key == "confirmed" or row.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</a></p>
+                    <p class="desk-row-meta">{{ row.court }} · <span class="desk-ref">{{ row.reference }}</span></p>
+                  </div>
+                  {% if row.can_check_in %}
+                    <form class="desk-row-action" method="post" action="{% url 'dashboard:check_in' row.reference %}" hx-post="{% url 'dashboard:check_in' row.reference %}" hx-target="#desk" hx-swap="outerHTML">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-sm desk-row-btn" aria-label="Check in {{ row.reference }}">Check in</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="desk-card-empty">Nobody else is due in the next {{ upcoming_hours }} hours.</p>
+          {% endif %}
+        </section>
+
+        <section class="desk-card" aria-labelledby="desk-on-court-title">
+          <header class="desk-card-head">
+            <h2 id="desk-on-court-title" class="desk-card-title">On court now</h2>
+            <p class="desk-card-meta">{{ on_court|length }} checked in</p>
+          </header>
+          {% if on_court %}
+            <ul class="desk-rows">
+              {% for row in on_court %}
+                <li>
+                  <a class="desk-row desk-row-link" href="{% url 'dashboard:booking_detail' row.reference %}">
+                    <span class="desk-row-who">
+                      <span class="desk-row-name">{% if row.sport %}<span class="tag tag-{{ row.sport }}"></span>{% endif %}{% if row.name %}{{ row.name }}{% elif row.status_key == "block" %}Blocked{% elif row.status_key == "confirmed" or row.status_key == "checked_in" %}Walk-in{% else %}—{% endif %}</span>
+                      <span class="desk-row-meta">{{ row.court }}</span>
+                    </span>
+                    <span class="desk-row-until">until {{ row.ends }}</span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="desk-card-empty">Nobody is checked in on court right now.</p>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+    {% if toast %}
+      <div id="toast" class="toast" role="status" aria-live="polite" hx-swap-oob="true"><span aria-hidden="true">✓ </span>{{ toast }}</div>
+      <span id="desk-badge" class="nav-badge" hx-swap-oob="true">{% if arriving %}{{ arriving|length }}<span class="visually-hidden"> arriving next</span>{% endif %}</span>
+    {% endif %}
+  {% endpartialdef %}
+{% endblock %}

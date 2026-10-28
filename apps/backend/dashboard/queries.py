@@ -18,7 +18,7 @@ from django.db.models import Count, IntegerField, Q, Sum
 from django.db.models.functions import Coalesce, ExtractHour, ExtractIsoWeekDay
 from django.utils import timezone
 
-from accounts.roles import Role, can_cancel, can_see_personal_data
+from accounts.roles import Role, can_cancel, can_check_in, can_see_personal_data
 from bookings.holds import refunds_on_cancel
 from bookings.models import Booking, SlotLock
 from bookings.rules import (
@@ -140,7 +140,7 @@ class SportRevenue:
 @dataclass(frozen=True)
 class HeatCell:
     pct: int  # 0-100
-    level: int  # 0-5: the CSS class `heat-<level>`.
+    level: int  # 0-9, one per 10%: the CSS class `heat-<level>`.
 
 
 @dataclass(frozen=True)
@@ -288,7 +288,7 @@ def _heatmap(now: datetime) -> Heatmap:
             key = (weekday, hour)
             capacity = SPACE_COUNT * days_per_weekday - blocked.get(key, 0)
             pct = min(100, round(100 * booked.get(key, 0) / capacity)) if capacity > 0 else 0
-            cells.append(HeatCell(pct=pct, level=-(-pct // 20)))  # ceil(pct / 20): 0, 1..5.
+            cells.append(HeatCell(pct=pct, level=min(9, pct // 10)))
         table.append(HeatRow(label=label, cells=tuple(cells)))
     hours = tuple(f"{hour:02d}" for hour in range(OPEN_HOUR, CLOSE_HOUR))
     return Heatmap(hours=hours, rows=tuple(table))
@@ -355,7 +355,11 @@ SORTS = {
     "-created_at": "Newest booked",
     "-price_centavos": "Price, highest first",
 }
-STATUS_CHOICES = tuple(Status.choices)
+# Two derived statuses (see `status_key`) join the stored ones as extra filters; `confirmed` still
+# lists every confirmed booking, ended or checked in or not.
+CHECKED_IN = "checked_in"
+COMPLETED = "completed"
+STATUS_CHOICES = (*Status.choices, (CHECKED_IN, "Checked in"), (COMPLETED, "Completed"))
 SPORT_CHOICES = tuple(Sport.choices)
 SOURCE_CHOICES = tuple((source.value, SOURCE_LABELS[source]) for source in Source)
 # Dates outside this range are treated as invalid, so `date_to + 1 day` can never overflow.
@@ -418,7 +422,7 @@ def parse_list_params(querydict) -> ListParams:
     return ListParams(
         # Postgres refuses a NUL in a string, so it is dropped rather than left to raise.
         q=(get("q") or "").replace("\x00", "").strip()[:MAX_QUERY_LENGTH],
-        status=_choice(get("status"), Status.values),
+        status=_choice(get("status"), dict(STATUS_CHOICES)),
         sport=_choice(get("sport"), Sport.values),
         source=_choice(get("source"), Source.values),
         date_from=_date(get("from")),
@@ -438,6 +442,8 @@ class BookingRow:
     source_label: str
     status: str  # The value, for the badge's CSS class.
     status_label: str
+    status_key: str  # See `status_key`.
+    checked_in_clock: str  # "6:55 PM", or empty.
     is_demo: bool
     name: str  # The personal fields are masked for the viewer.
     email: str
@@ -494,6 +500,8 @@ class BookingDetail:
     source_label: str
     status: str
     status_label: str
+    status_key: str  # See `status_key`.
+    checked_in_clock: str  # "6:55 PM", or empty.
     is_demo: bool
     name: str  # The personal fields are masked for the viewer.
     email: str
@@ -509,11 +517,41 @@ class BookingDetail:
     cancelled_at: str
     anonymized: bool
     can_cancel: bool
+    can_check_in: bool
     refund_note: bool  # The owner cancelling a paid online booking refunds it in PayMongo.
 
     @property
     def needs_refund(self) -> bool:
         return self.status == Status.NEEDS_REFUND
+
+
+def status_key(booking: Booking, now: datetime) -> str:
+    """The status staff see, and the only place it is decided: `block` for a block; for a
+    confirmed booking, `completed` once it has ended, else `checked_in` once checked in; otherwise
+    the stored status."""
+    if booking.source == Source.BLOCK:
+        return "block"
+    if booking.status == Status.CONFIRMED:
+        if booking.ends_at <= now:
+            return COMPLETED
+        if booking.checked_in_at is not None:
+            return CHECKED_IN
+    return booking.status
+
+
+def _status_filter(status: str, now: datetime) -> Q:
+    """The list's status filter. The derived ones match `status_key`."""
+    if status == CHECKED_IN:
+        return Q(status=Status.CONFIRMED, checked_in_at__isnull=False, ends_at__gt=now) & ~Q(
+            source=Source.BLOCK
+        )
+    if status == COMPLETED:
+        return Q(status=Status.CONFIRMED, ends_at__lte=now) & ~Q(source=Source.BLOCK)
+    return Q(status=status)
+
+
+def _checked_in_clock(booking: Booking) -> str:
+    return _clock(booking.checked_in_at) if booking.checked_in_at else ""
 
 
 def _stamp(moment: datetime | None) -> str:
@@ -547,7 +585,7 @@ def _personal(role: Role | None, booking: Booking) -> tuple[str, str, str]:
     )
 
 
-def _row(role: Role | None, booking: Booking) -> BookingRow:
+def _row(role: Role | None, booking: Booking, now: datetime) -> BookingRow:
     name, email, mobile = _personal(role, booking)
     return BookingRow(
         reference=booking.reference,
@@ -558,6 +596,8 @@ def _row(role: Role | None, booking: Booking) -> BookingRow:
         source_label=SOURCE_LABELS[booking.source],
         status=booking.status,
         status_label=Status(booking.status).label,
+        status_key=status_key(booking, now),
+        checked_in_clock=_checked_in_clock(booking),
         is_demo=booking.is_demo,
         name=name,
         email=email,
@@ -581,13 +621,15 @@ def _search(role: Role | None, text: str) -> Q:
     return Q(reference__icontains=text) | Q(customer_name__icontains=text, is_demo=True)
 
 
-def list_bookings(*, role: Role | None, params: ListParams) -> Page:
-    """One page of bookings (25), filtered and sorted by `params`, masked for `role`."""
+def list_bookings(*, role: Role | None, params: ListParams, now: datetime | None = None) -> Page:
+    """One page of bookings (25), filtered and sorted by `params`, masked for `role`. `now` is
+    injectable so tests can pin the clock."""
+    now = now or timezone.now()
     bookings = Booking.objects.select_related("court")
     if params.q:
         bookings = bookings.filter(_search(role, params.q))
     if params.status:
-        bookings = bookings.filter(status=params.status)
+        bookings = bookings.filter(_status_filter(params.status, now))
     if params.sport:
         bookings = bookings.filter(sport=params.sport)
     if params.source:
@@ -603,7 +645,7 @@ def list_bookings(*, role: Role | None, params: ListParams) -> Page:
     # `reference` breaks ties so a page boundary never repeats or skips a row.
     rows = bookings.order_by(params.sort, "reference")[offset : offset + PAGE_SIZE]
     return Page(
-        rows=tuple(_row(role, booking) for booking in rows),
+        rows=tuple(_row(role, booking, now) for booking in rows),
         total=total,
         page=page,
         pages=pages,
@@ -638,6 +680,8 @@ def get_booking(
         source_label=SOURCE_LABELS[booking.source],
         status=booking.status,
         status_label=Status(booking.status).label,
+        status_key=status_key(booking, now),
+        checked_in_clock=_checked_in_clock(booking),
         is_demo=booking.is_demo,
         name=name,
         email=email,
@@ -653,5 +697,6 @@ def get_booking(
         cancelled_at=_stamp(booking.cancelled_at),
         anonymized=booking.anonymized_at is not None,
         can_cancel=cancellable,
+        can_check_in=can_check_in(role, booking, now=now),
         refund_note=cancellable and role == Role.OWNER and refunds_on_cancel(booking),
     )

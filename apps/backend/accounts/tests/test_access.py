@@ -8,7 +8,13 @@ from django.test import RequestFactory
 from django.urls import path
 
 from accounts.decorators import staff_required
-from accounts.roles import Role, can_cancel, can_create_staff_booking, can_see_personal_data
+from accounts.roles import (
+    Role,
+    can_cancel,
+    can_check_in,
+    can_create_staff_booking,
+    can_see_personal_data,
+)
 from core.http import client_ip
 
 
@@ -139,8 +145,22 @@ NOW = datetime(2026, 11, 2, 4, tzinfo=UTC)
 LATER = NOW + timedelta(hours=1)
 
 
-def _booking(source="online", status="confirmed", is_demo=False, ends_at=LATER):
-    return SimpleNamespace(source=source, status=status, is_demo=is_demo, ends_at=ends_at)
+def _booking(
+    source="online",
+    status="confirmed",
+    is_demo=False,
+    ends_at=LATER,
+    starts_at=NOW,
+    checked_in_at=None,
+):
+    return SimpleNamespace(
+        source=source,
+        status=status,
+        is_demo=is_demo,
+        ends_at=ends_at,
+        starts_at=starts_at,
+        checked_in_at=checked_in_at,
+    )
 
 
 @pytest.mark.parametrize(
@@ -167,6 +187,50 @@ def _booking(source="online", status="confirmed", is_demo=False, ends_at=LATER):
 )
 def test_cancel_permissions(role, booking, allowed):
     assert can_cancel(role, booking, now=NOW) is allowed
+
+
+# NOW is 12:00 in Manila; 16:00 UTC the same UTC day is already tomorrow there.
+MANILA_TOMORROW = datetime(2026, 11, 2, 16, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("role", "booking", "allowed"),
+    [
+        (Role.OWNER, _booking(), True),
+        (Role.OWNER, _booking(source="walk_in"), True),
+        (Role.OWNER, _booking(status="pending"), False),
+        (Role.OWNER, _booking(status="cancelled"), False),
+        (Role.OWNER, _booking(status="needs_refund"), False),
+        (Role.OWNER, _booking(status="expired"), False),
+        (Role.OWNER, _booking(source="block"), False),
+        (Role.OWNER, _booking(checked_in_at=NOW - timedelta(minutes=5)), False),
+        (Role.OWNER, _booking(ends_at=NOW), False),
+        (Role.OWNER, _booking(ends_at=NOW + timedelta(minutes=1)), True),
+        (
+            Role.OWNER,
+            _booking(starts_at=NOW + timedelta(days=1), ends_at=LATER + timedelta(days=1)),
+            False,
+        ),
+        (
+            Role.OWNER,
+            _booking(starts_at=MANILA_TOMORROW, ends_at=MANILA_TOMORROW + timedelta(hours=1)),
+            False,
+        ),
+        # The viewer: demo data or a walk-in, never a real visitor's online booking.
+        (Role.VIEWER, _booking(), False),
+        (Role.VIEWER, _booking(is_demo=True), True),
+        (Role.VIEWER, _booking(source="walk_in"), True),
+        (Role.VIEWER, _booking(source="block"), False),
+        (Role.VIEWER, _booking(source="block", is_demo=True), False),
+        (Role.VIEWER, _booking(is_demo=True, status="pending"), False),
+        (Role.VIEWER, _booking(is_demo=True, ends_at=NOW), False),
+        (Role.VIEWER, _booking(source="walk_in", checked_in_at=NOW), False),
+        (None, _booking(source="walk_in"), False),
+        (None, _booking(is_demo=True), False),
+    ],
+)
+def test_check_in_permissions(role, booking, allowed):
+    assert can_check_in(role, booking, now=NOW) is allowed
 
 
 def _request(xff=None, remote="10.0.0.1"):

@@ -7,14 +7,26 @@ The grid has one row per court in `sort_order`, and two for a basketball court (
 B), by hour from opening to closing. A booking is one segment per row, spanning its consecutive
 hours (`colspan`), so a full-court basketball booking appears in both half rows. Only active
 locks show (`bookings.availability.occupancy`): confirmed bookings and live payment holds.
+
+The template draws the day as a CSS grid (`Grid.blocks`, `Grid.empty_cells`, `Grid.groups`), placed
+by line numbers: row 1 is the hour header, column 1 the court names, and `FIRST_COL` is the first
+hour. The rows are the segments above, grouped; a booking that holds both basketball halves is one
+block spanning both rows.
 """
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from django.utils import timezone
 
-from accounts.roles import Role, can_cancel, can_create_staff_booking, can_see_personal_data
+from accounts.roles import (
+    Role,
+    can_cancel,
+    can_check_in,
+    can_create_staff_booking,
+    can_see_personal_data,
+)
 from bookings.availability import occupancy
 from bookings.holds import refunds_on_cancel
 from bookings.models import Booking, Court
@@ -24,6 +36,7 @@ from bookings.rules import (
     SPACES,
     STAFF_WINDOW_DAYS,
     TIME_ZONE,
+    CourtKind,
     Source,
     Sport,
     Status,
@@ -31,7 +44,18 @@ from bookings.rules import (
     slot_starts,
 )
 
-from .queries import SOURCE_LABELS, mask_email, mask_mobile, name_for, peso
+from .desk import STATUS_LABELS
+from .queries import (
+    CHECKED_IN,
+    COMPLETED,
+    SOURCE_LABELS,
+    _checked_in_clock,
+    mask_email,
+    mask_mobile,
+    name_for,
+    peso,
+    status_key,
+)
 
 # The demo viewer can add bookings from today to today + 6 (the storefront's window).
 VIEWER_DAYS_AHEAD = 6
@@ -40,10 +64,19 @@ BROWSE_DAYS = STAFF_WINDOW_DAYS
 
 FREE = "free"
 BOOKING = "booking"
-_SLOT_CLASSES = {
-    Source.ONLINE: "slot-online",
-    Source.WALK_IN: "slot-walkin",
-    Source.BLOCK: "slot-block",
+# The grid column of OPEN_HOUR: column 1 holds the court names.
+FIRST_COL = 2
+GROUP_LABELS = {
+    CourtKind.BASKETBALL: "Basketball · Volleyball",
+    CourtKind.TENNIS: "Tennis",
+    CourtKind.MULTI: "Multi-courts · Badminton & Pickleball",
+}
+# `queries.status_key` -> a block's state. A confirmed booking is `walk_in` or `online` by source.
+_BLOCK_STATES = {
+    COMPLETED: "done",
+    CHECKED_IN: "checked_in",
+    Source.BLOCK: "block",
+    Status.PENDING: "pending",
 }
 
 
@@ -68,15 +101,8 @@ class Cell:
     name: str = ""  # Masked for the viewer.
     text: str = ""  # What the cell shows.
     can_cancel: bool = False
-
-    @property
-    def css(self) -> str:
-        if self.state == FREE:
-            return "slot-past" if self.past else "slot-free"
-        classes = [_SLOT_CLASSES[self.source]]
-        if self.status == Status.PENDING:
-            classes.append("slot-pending")
-        return " ".join(classes)
+    block_state: str = ""  # See `Block.state`; empty for a free cell.
+    sub: str = ""  # The second line of the booking's block: sport, half and reference.
 
 
 @dataclass(frozen=True)
@@ -85,14 +111,69 @@ class Row:
     court_code: str
     space: str  # "F", "A" or "B".
     cells: tuple[Cell, ...]
+    grid_row: int  # The row's line in the CSS grid.
+    name: str  # The court's name: "Tennis Court 2" or "Basketball Court 1".
+    half: str  # "Half A" or "Half B" on a basketball court; empty otherwise.
+
+
+@dataclass(frozen=True)
+class Group:
+    """A heading row between the court rows: "Tennis", for instance."""
+
+    label: str
+    row: int
+
+
+@dataclass(frozen=True)
+class HourHead:
+    label: str
+    col: int
+    past: bool  # The hour has ended.
+    current: bool  # It is this hour now (today only).
+
+
+@dataclass(frozen=True)
+class EmptyCell:
+    """A free hour on one row: a button when `addable`, else inert (`past` or out of range)."""
+
+    row: int
+    col: int
+    court_code: str
+    space: str
+    hour: int
+    past: bool
+    addable: bool
+    label: str  # The accessible label of the cell's button.
+
+
+@dataclass(frozen=True)
+class Block:
+    """One booking on one court. A booking that holds both basketball halves (a full-court
+    booking, or a block) is one block spanning both rows."""
+
+    reference: str
+    row: int
+    row_span: int  # 1, or 2 for a booking on both halves.
+    col: int
+    col_span: int  # Hours.
+    state: str  # online, checked_in, walk_in, pending, block or done.
+    name: str  # Masked for the viewer.
+    sub: str
+    label: str  # The accessible label of the block's button.
 
 
 @dataclass(frozen=True)
 class Grid:
     day: date
     today: date
-    hours: tuple[str, ...]  # Column headers.
+    hour_heads: tuple[HourHead, ...]  # Column headers.
+    groups: tuple[Group, ...]
     rows: tuple[Row, ...]
+    blocks: tuple[Block, ...]
+    empty_cells: tuple[EmptyCell, ...]
+    now_col: int | None  # The current hour's column; None unless today and the venue is open.
+    now_minute_class: str  # "now-m-45": where in that column the marker sits.
+    now_label: str  # "7:48".
     prev_day: date | None  # None at the edge of the browsable range.
     next_day: date | None
     min_day: date
@@ -121,6 +202,9 @@ class BookingDetail:
     note: str
     can_cancel: bool
     refund_note: bool  # The owner cancelling a paid online booking refunds it in PayMongo.
+    can_check_in: bool
+    status_key: str  # See `queries.status_key`; `status` is its label.
+    checked_in_clock: str  # "6:55 PM", or empty.
 
 
 def browse_bounds(now: datetime) -> tuple[date, date]:
@@ -147,6 +231,22 @@ def _text(booking: Booking, name: str) -> str:
     return name or Sport(booking.sport).label
 
 
+def block_state(booking: Booking, now: datetime) -> str:
+    """The look of `booking`'s block, from `queries.status_key`, the one rule for a status."""
+    state = _BLOCK_STATES.get(status_key(booking, now))
+    if state:
+        return state
+    return "walk_in" if booking.source == Source.WALK_IN else "online"
+
+
+def _sub(booking: Booking) -> str:
+    """The block's second line: `Basketball · half · KC-AB12CD`, or `Blocked · KC-AB12CD`."""
+    if booking.source == Source.BLOCK:
+        return f"Blocked · {booking.reference}"
+    half = " · half" if booking.half else ""
+    return f"{Sport(booking.sport).label}{half} · {booking.reference}"
+
+
 def _booking_cell(row_label: str, booking: Booking, start: int, end: int, *, role, day, now):
     name = "" if booking.source == Source.BLOCK else name_for(role, booking.customer_name)
     source = SOURCE_LABELS[booking.source].lower()
@@ -169,11 +269,16 @@ def _booking_cell(row_label: str, booking: Booking, start: int, end: int, *, rol
         name=name,
         text=_text(booking, name),
         can_cancel=can_cancel(role, booking, now=now),
+        block_state=block_state(booking, now),
+        sub=_sub(booking),
     )
 
 
-def _row(court: Court, space: str, taken: dict, *, role, day, now, addable_day) -> Row:
-    label = court.name if space == "F" else f"{court.name} · Half {space}"
+def _row(
+    court: Court, space: str, taken: dict, *, role, day, now, addable_day, grid_row: int
+) -> Row:
+    half = "" if space == "F" else f"Half {space}"
+    label = f"{court.name} · {half}" if half else court.name
     cells = []
     hour = OPEN_HOUR
     while hour < CLOSE_HOUR:
@@ -198,7 +303,58 @@ def _row(court: Court, space: str, taken: dict, *, role, day, now, addable_day) 
             end += 1
         cells.append(_booking_cell(label, booking, hour, end, role=role, day=day, now=now))
         hour = end
-    return Row(label=label, court_code=court.code, space=space, cells=tuple(cells))
+    return Row(
+        label=label,
+        court_code=court.code,
+        space=space,
+        cells=tuple(cells),
+        grid_row=grid_row,
+        name=court.name,
+        half=half,
+    )
+
+
+def _blocks(court: Court, rows: list[Row]) -> list[Block]:
+    """The court's bookings as blocks. A booking on both halves is in both rows' cells but is one
+    block, starting in the first row and spanning them all."""
+    rows_of = Counter(cell.reference for row in rows for cell in row.cells if cell.reference)
+    blocks = {}
+    for row in rows:
+        for cell in row.cells:
+            if not cell.reference or cell.reference in blocks:
+                continue
+            span = rows_of[cell.reference]
+            blocks[cell.reference] = Block(
+                reference=cell.reference,
+                row=row.grid_row,
+                row_span=span,
+                col=cell.hour - OPEN_HOUR + FIRST_COL,
+                col_span=cell.colspan,
+                state=cell.block_state,
+                name=cell.text,
+                sub=cell.sub,
+                # Over both halves it is the court's, not the first half's.
+                label=cell.label if span == 1 else court.name + cell.label.removeprefix(row.label),
+            )
+    return list(blocks.values())
+
+
+def _empty_cells(rows: list[Row]) -> list[EmptyCell]:
+    return [
+        EmptyCell(
+            row=row.grid_row,
+            col=cell.hour - OPEN_HOUR + FIRST_COL,
+            court_code=row.court_code,
+            space=row.space,
+            hour=cell.hour,
+            past=cell.past,
+            addable=cell.addable,
+            label=cell.label,
+        )
+        for row in rows
+        for cell in row.cells
+        if cell.state == FREE
+    ]
 
 
 def build_grid(day: date, *, role: Role | None, now: datetime | None = None) -> Grid:
@@ -206,18 +362,55 @@ def build_grid(day: date, *, role: Role | None, now: datetime | None = None) -> 
     now = now or timezone.now()
     taken = occupancy(day, now=now)
     addable_day = can_add_on(role, day, now)
-    rows = []
+    groups, rows, blocks = [], [], []
+    grid_row = 2  # Row 1 is the hour header.
+    kind = None
     for court in Court.objects.filter(is_active=True).order_by("sort_order"):
+        if court.kind != kind:  # A heading row before each kind of court.
+            kind = court.kind
+            groups.append(Group(label=GROUP_LABELS[kind], row=grid_row))
+            grid_row += 1
+        court_rows = []
         for space in SPACES[court.kind]:  # Basketball: A and B; the rest: F.
-            rows.append(
-                _row(court, space, taken, role=role, day=day, now=now, addable_day=addable_day)
+            court_rows.append(
+                _row(
+                    court,
+                    space,
+                    taken,
+                    role=role,
+                    day=day,
+                    now=now,
+                    addable_day=addable_day,
+                    grid_row=grid_row,
+                )
             )
+            grid_row += 1
+        rows.extend(court_rows)
+        blocks.extend(_blocks(court, court_rows))
     first, last = browse_bounds(now)
+    today = local_today(now)
+    local = now.astimezone(TIME_ZONE)
+    marker = day == today and OPEN_HOUR <= local.hour < CLOSE_HOUR
+    now_col = local.hour - OPEN_HOUR + FIRST_COL if marker else None
     return Grid(
         day=day,
-        today=local_today(now),
-        hours=tuple(hour_label(hour) for hour in range(OPEN_HOUR, CLOSE_HOUR)),
+        today=today,
+        hour_heads=tuple(
+            HourHead(
+                label=hour_label(hour),
+                col=hour - OPEN_HOUR + FIRST_COL,
+                past=_hour_ended(day, hour, now),
+                current=hour - OPEN_HOUR + FIRST_COL == now_col,
+            )
+            for hour in range(OPEN_HOUR, CLOSE_HOUR)
+        ),
+        groups=tuple(groups),
         rows=tuple(rows),
+        blocks=tuple(blocks),
+        empty_cells=tuple(_empty_cells(rows)),
+        now_col=now_col,
+        now_minute_class=f"now-m-{local.minute // 5 * 5}" if marker else "",
+        now_label=f"{local.hour % 12 or 12}:{local.minute:02d}" if marker else "",
         prev_day=day - timedelta(days=1) if day > first else None,
         next_day=day + timedelta(days=1) if day < last else None,
         min_day=first,
@@ -256,6 +449,7 @@ def booking_detail(
     # note is its reason (maintenance, an event) and is shown to everyone.
     show_note = booking.source == Source.BLOCK or raw
     cancellable = can_cancel(role, booking, now=now)
+    key = status_key(booking, now)
     return BookingDetail(
         reference=booking.reference,
         court=booking.court.name,
@@ -264,7 +458,7 @@ def booking_detail(
         when=f"{start:%a} {start.day} {start:%b}, {_clock(booking.starts_at)} - "
         f"{_clock(booking.ends_at)}",
         source=SOURCE_LABELS[booking.source],
-        status=Status(booking.status).label,
+        status=STATUS_LABELS[key],
         is_demo=booking.is_demo,
         name=name_for(role, booking.customer_name),
         email=(booking.customer_email or "") if raw else mask_email(booking.customer_email),
@@ -274,4 +468,7 @@ def booking_detail(
         note=booking.note if show_note else "",
         can_cancel=cancellable,
         refund_note=cancellable and role == Role.OWNER and refunds_on_cancel(booking),
+        can_check_in=can_check_in(role, booking, now=now),
+        status_key=key,
+        checked_in_clock=_checked_in_clock(booking),
     )

@@ -346,6 +346,31 @@ it. Do this once per Neon branch, `dev` first and then `main`, when CBS-4 merges
 The reverse of `0002_app_role` revokes `cb_app`'s grants but keeps the role: roles are cluster-wide, and other
 databases on the cluster may use it.
 
+### Check-in migration (0003)
+
+Migration `bookings.0003_booking_check_in` adds two nullable columns to `Booking`: `checked_in_at` and `checked_in_by`
+(a foreign key to the staff user, `SET_NULL`). It is expand-only, and the old code ignores the columns. The new code
+(the Front desk check-in, CBS-19 and CBS-20) reads them, so apply the migration **before** merging the
+`develop → main` Release PR that ships it, or the new code deploys against columns that don't exist yet.
+
+1. Apply it as the owner, from the laptop, the same way as step 1 above: on `dev` first and then on `main`, with
+   `MIGRATE_DATABASE_URL` exported for that branch. From `apps/backend`:
+
+   ```sh
+   DATABASE_URL="$MIGRATE_DATABASE_URL" uv run python manage.py migrate
+   ```
+
+2. Check that `0003` shows `[X]`, on each branch:
+
+   ```sh
+   DATABASE_URL="$MIGRATE_DATABASE_URL" uv run python manage.py showmigrations bookings
+   ```
+
+3. Merge the Release PR only after both branches show it applied.
+
+Rollback: the columns are nullable and unused by the old code, so reverting the code needs no contract step. Leave the
+migration applied; a later contract plan can drop the columns. Don't migrate backwards.
+
 ## PayMongo (test mode)
 
 Bookings are paid through PayMongo's hosted checkout, in **test mode only**: the backend accepts only a test secret
@@ -434,6 +459,8 @@ with a real one is skipped and the real booking wins. Demo bookings also stay of
 bookings that haven't started (pending, or expired after a lapsed hold), so a late payment can still re-claim them
 instead of ending up `needs_refund`. Real bookings are never changed or deleted by the seed.
 Demo customers use `@example.com` emails and `+63900000xxxx` mobiles.
+Demo bookings are never pre-checked-in: the reseed runs at 03:00, before any booking that day starts. The viewer can
+check in today's demo bookings from the Front desk.
 
 The Cloud Run Job `cb-nightly` runs `python manage.py nightly` once a day at 03:00 Manila time. Each step logs counts
 only (logger `cb.nightly`, never row contents), and a failing step is logged by its exception class without
@@ -606,8 +633,8 @@ There is no sign-up and no Django admin: the only two accounts, `owner` and `vie
 Owner's sign-off before a release or before sharing the demo. Each step names its own check; sections link to the
 setup they assume.
 
-- [ ] **Neon.** The `main` and `dev` branches exist; migrations ran as the owner on both; `cb_app_login` exists on
-  both; and `psql "$DATABASE_URL" -c "CREATE TABLE x(id int)"` fails as `cb_app_login`. See
+- [ ] **Neon.** The `main` and `dev` branches exist; migrations ran as the owner on both, including `bookings.0003`;
+  `cb_app_login` exists on both; and `psql "$DATABASE_URL" -c "CREATE TABLE x(id int)"` fails as `cb_app_login`. See
   [Neon (once)](#neon-once) and [Database roles and migrations](#database-roles-and-migrations).
 - [ ] **Secret Manager.** All 6 secrets hold real values (no `pending` placeholders), and exactly 6 versions are
   active. See [Cloud Run (once)](#cloud-run-once).

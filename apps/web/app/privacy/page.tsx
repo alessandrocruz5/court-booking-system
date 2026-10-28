@@ -30,6 +30,10 @@ export default function PrivacyPage() {
           <ul>
             <li>your name, email and mobile number;</li>
             <li>the booking details: court, date, time, and the amount;</li>
+            <li>
+              if you play, the time staff checked you in at the venue, and which staff account did
+              it;
+            </li>
             <li>the payment reference and payment method; and</li>
             <li>the time you gave your consent.</li>
           </ul>
@@ -62,8 +66,8 @@ export default function PrivacyPage() {
         <Section title="How long we keep it">
           <p>
             {`A nightly job anonymizes a visitor booking once ${RETENTION_DAYS} days have passed since it ended, so within ${RETENTION_DAYS + 1} days. `}
-            Your name, email and mobile are removed. The court, time and amount stay, for the
-            venue&apos;s statistics. Demo bookings use fake @example.com people.
+            Your name, email and mobile are removed. The court, time, amount and check-in time stay,
+            for the venue&apos;s statistics. Demo bookings use fake @example.com people.
           </p>
         </Section>
 

@@ -1,15 +1,18 @@
 """Staff dashboard pages. Each view is wrapped in `@staff_required`; the data, already masked for
-the viewer's role, comes only from `dashboard.queries` (or `dashboard.schedule` for the grid).
+the viewer's role, comes only from `dashboard.queries` (or `dashboard.schedule` for the grid and
+`dashboard.desk` for the Front desk).
 
 Schedule writes go only through `bookings.holds`, with the permission checked here on the server
 (`accounts.roles`); the templates only reflect it. The demo viewer's writes are rate-limited per
 client IP, capped in number while live, and marked `is_demo`, so the nightly reseed tidies them
 away. Cancelling a pending online hold expires its PayMongo checkout session once the cancel has
-committed, never inside a transaction.
+committed, never inside a transaction. A check-in goes only through `bookings.checkin`, under the
+same permission check (`accounts.roles.can_check_in`) and the same viewer budget.
 """
 
 from datetime import date, timedelta
 from functools import partial
+from urllib.parse import urlencode
 
 from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseRedirect
@@ -19,18 +22,19 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from accounts.decorators import staff_required
-from accounts.roles import Role, can_cancel, can_create_staff_booking
-from bookings import holds
-from bookings.rules import TIME_ZONE, BookingRuleError, Status, local_today
+from accounts.roles import Role, can_cancel, can_check_in, can_create_staff_booking
+from bookings import checkin, holds
+from bookings.rules import HOLD_MINUTES, TIME_ZONE, BookingRuleError, Source, Status, local_today
 from core.http import client_ip
 from core.ratelimit import hit
 from payments.confirm import expire_session
 
-from . import queries, schedule
+from . import desk, queries, schedule
 from .forms import RULE_ERROR_DEFAULT, RULE_ERRORS, SLOT_TAKEN, StaffBookingForm
 
 SCHEDULE = "dashboard/schedule.html"
 BOOKINGS = "dashboard/bookings.html"
+DESK = "dashboard/desk.html"
 # The viewer's writes (creates and cancels) per client IP. Must stay within the nightly prune's
 # `RATE_LIMIT_MAX_AGE` (10 minutes).
 WRITE_LIMIT = 20
@@ -41,6 +45,15 @@ DEMO_LIVE_CAP = 50
 
 CANT_CANCEL = "You can't cancel this booking."
 CANT_CREATE = "You can't add bookings."
+CANT_CHECK_IN = "You can't check in this booking."
+# `bookings.checkin.CheckInError.code` -> what the desk says. Reached only when the booking changed
+# after the permission check (e.g. cancelled meanwhile); `can_check_in` refuses the rest first.
+CHECK_IN_ERRORS = {
+    "not_confirmed": "This booking isn't confirmed, so it can't be checked in.",
+    "is_block": "A block can't be checked in.",
+    "not_today": "This booking isn't for today, so it can't be checked in yet.",
+    "ended": "This session has already ended.",
+}
 DEMO_LIMIT = "Demo limit reached. Try again in a few minutes."
 DEMO_FULL = (
     "The demo has enough bookings for now. Try cancelling one of yours, or come back tomorrow."
@@ -79,14 +92,17 @@ def _requested_day(value: str | None, now) -> date:
     return min(max(day, first), last)
 
 
-def _render_fragment(request, name: str, context: dict, *, status: int = 200) -> HttpResponse:
-    """A schedule partial for htmx; anyone else gets it inside the dashboard shell, never bare."""
+def _render_fragment(
+    request, name: str, context: dict, *, status: int = 200, template: str = SCHEDULE
+) -> HttpResponse:
+    """A partial of `template` (the schedule by default) for htmx; anyone else gets it inside the
+    dashboard shell, never bare."""
     if _is_htmx(request):
-        return render(request, f"{SCHEDULE}#{name}", context, status=status)
+        return render(request, f"{template}#{name}", context, status=status)
     return render(
         request,
         "dashboard/fragment_page.html",
-        {**context, "fragment": f"{SCHEDULE}#{name}"},
+        {**context, "fragment": f"{template}#{name}"},
         status=status,
     )
 
@@ -141,7 +157,7 @@ def schedule_view(request):
 
 
 def _to_detail(request, reference: str) -> HttpResponse:
-    """After a cancel from the detail page: back to that page, not to a grid partial."""
+    """After a cancel or check-in from the detail page: back to that page, not to a grid partial."""
     url = reverse("dashboard:booking_detail", args=[reference])
     if _is_htmx(request):
         response = HttpResponse()
@@ -156,7 +172,7 @@ def bookings_view(request):
     params = queries.parse_list_params(request.GET)
     context = {
         "params": params,
-        "page": queries.list_bookings(role=request.staff_role, params=params),
+        "page": queries.list_bookings(role=request.staff_role, params=params, now=timezone.now()),
         "status_choices": queries.STATUS_CHOICES,
         "sport_choices": queries.SPORT_CHOICES,
         "source_choices": queries.SOURCE_CHOICES,
@@ -293,3 +309,118 @@ def _create(request):
         form.add_error(None, RULE_ERRORS.get(error.code, RULE_ERROR_DEFAULT))
         return _form_response(request, form)
     return _grid_response(request, data["date"], now, toast="Booking added.")
+
+
+# --- Front desk -----------------------------------------------------------------------------------
+
+
+def _desk_context(request, now, text: str | None) -> dict:
+    """The desk for the lookup `text`: the result (or not found), today's numbers, who is arriving
+    and who is on court, all from `dashboard.desk`, already masked for the viewer's role."""
+    role = request.staff_role
+    query = desk.normalise_query(text)
+    result = desk.lookup(role, query, now) if query else None
+    arriving = desk.arriving(role, now)
+    # The demo viewer gets two of today's demo references to try; never a real customer's.
+    hints = [row.reference for row in arriving if row.is_demo][:2] if role == Role.VIEWER else []
+    return {
+        "query": query,
+        "query_text": (text or "").replace("\x00", "").strip()[: queries.MAX_QUERY_LENGTH],
+        "result": result,
+        "not_found": bool(query) and result is None,
+        "stats": desk.stats(now),
+        "arriving": arriving,
+        "on_court": desk.on_court(role, now),
+        "hints": hints,
+        "hold_minutes": HOLD_MINUTES,
+        "upcoming_hours": queries.UPCOMING_HOURS,
+    }
+
+
+def _desk_url(reference: str = "") -> str:
+    url = reverse("dashboard:desk")
+    return f"{url}?{urlencode({'q': reference})}" if reference else url
+
+
+def _desk_message(request, reference: str, now, message: str, status: int) -> HttpResponse:
+    """A refusal shown on the desk, with the booking looked up, whatever element the request
+    targeted. The htmx config in `dashboard/base.html` swaps 403 and 429 responses."""
+    context = {**_desk_context(request, now, reference), "message": message}
+    response = _render_fragment(request, "desk", context, status=status, template=DESK)
+    response["HX-Retarget"] = "#desk"
+    response["HX-Reswap"] = "outerHTML"
+    return response
+
+
+@staff_required
+@require_GET
+def desk_view(request):
+    now = timezone.now()
+    text = request.GET.get("q")
+    context = _desk_context(request, now, text)
+    if context["not_found"]:
+        # Without JS, a name typed into the lookup still finds its bookings.
+        context["suggestions"] = desk.suggest(request.staff_role, text, now)
+    return render(request, DESK, context)
+
+
+@staff_required
+@require_GET
+def suggest_view(request):
+    """The lookup's suggestions, for htmx. Never a bare fragment: anyone else goes to the desk."""
+    text = (request.GET.get("q") or "")[: queries.MAX_QUERY_LENGTH]
+    if not _is_htmx(request):
+        return HttpResponseRedirect(_desk_url(text.replace("\x00", "").strip()))
+    suggestions = desk.suggest(request.staff_role, text, timezone.now())
+    return render(request, f"{DESK}#suggest", {"suggestions": suggestions})
+
+
+def _check_in_refused(request, booking, now, message: str, status: int) -> HttpResponse:
+    """A check-in refusal: in the side panel when it came from the schedule or a booking's page
+    (`return`), as `cancel_view` does, else on the desk."""
+    if request.POST.get("return") in ("schedule", "detail"):
+        return _panel_message(request, message, status)
+    return _desk_message(request, booking.reference, now, message, status)
+
+
+@staff_required
+@require_POST
+def check_in_view(request, reference):
+    """Check a booking in. From the desk (no `return`) the answer is the desk; `return=schedule`
+    (the schedule's side panel) answers with the refreshed grid and `return=detail` (a booking's
+    page) sends the visitor back to it."""
+    booking = schedule.get_booking(reference)
+    if booking is None:
+        raise Http404
+    role = request.staff_role
+    now = timezone.now()
+    # Already checked in (a double click): a success that changes nothing and spends no budget,
+    # for a role that could check this kind of booking in (R6, as `can_check_in`, which is False
+    # once checked in, so the role is checked here instead).
+    if booking.checked_in_at is None or booking.status != Status.CONFIRMED:
+        if not can_check_in(role, booking, now=now):
+            return _check_in_refused(request, booking, now, CANT_CHECK_IN, 403)
+        if not _viewer_write_allowed(request):
+            return _check_in_refused(request, booking, now, DEMO_LIMIT, 429)
+        try:
+            checkin.check_in(booking, by=request.user, now=now)
+        except checkin.CheckInError as error:
+            message = CHECK_IN_ERRORS.get(error.code, CANT_CHECK_IN)
+            return _check_in_refused(request, booking, now, message, 403)
+    elif not (
+        role == Role.OWNER
+        or (role == Role.VIEWER and (booking.is_demo or booking.source != Source.ONLINE))
+    ):
+        return _check_in_refused(request, booking, now, CANT_CHECK_IN, 403)
+    name = queries.name_for(role, booking.customer_name) or booking.reference
+    toast = f"{name} checked in · {booking.court.name}"
+    return_to = request.POST.get("return")
+    if return_to == "detail":
+        return _to_detail(request, reference)
+    if return_to == "schedule":
+        day = booking.starts_at.astimezone(TIME_ZONE).date()
+        return _grid_response(request, day, now, toast=toast)
+    if not _is_htmx(request):
+        return HttpResponseRedirect(_desk_url(booking.reference), status=303)
+    context = {**_desk_context(request, now, booking.reference), "toast": toast}
+    return render(request, f"{DESK}#desk", context)

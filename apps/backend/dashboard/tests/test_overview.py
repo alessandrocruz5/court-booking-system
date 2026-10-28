@@ -1,3 +1,5 @@
+import re
+from collections import Counter
 from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 from types import SimpleNamespace
@@ -137,6 +139,25 @@ class Tags(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         self.tags.append((tag, dict(attrs)))
+
+
+def class_lists(html: str, tag: str, prefix: str) -> list[list[str]]:
+    """The class tokens of every `tag` element that has a class starting with `prefix`, in order."""
+    found = []
+    for name, attrs in Tags(html).tags:
+        classes = attrs.get("class", "").split()
+        if name == tag and any(c.startswith(prefix) for c in classes):
+            found.append(classes)
+    return found
+
+
+def stat_cards(html: str) -> list[tuple[str, str, str]]:
+    """(label, value, sub) of every `.stat` card, read from the three paragraphs it holds."""
+    cards = []
+    for match in re.finditer(r'<div class="stat">(.*?)</div>', html, re.DOTALL):
+        label, value, sub = re.findall(r'<p class="stat-[a-z]+">(.*?)</p>', match[1])
+        cards.append((label, value, sub))
+    return cards
 
 
 # --- access and shell ---------------------------------------------------------------------------
@@ -301,14 +322,36 @@ class TestRevenue:
         assert rows[0].label == "Pickleball"
         assert rows[0].width == 100
         assert rows[1].gross == c.price_centavos
-        assert rows[1].width % 5 == 0
-        assert 5 <= rows[1].width < 100
+        assert rows[1].width == 55  # 50,000 of 90,000 is 55.6%: the nearest 5 is 55.
+
+    def test_bar_widths_are_relative_to_the_top_sport_in_steps_of_five(self):
+        friday, saturday = TODAY - timedelta(days=3), TODAY - timedelta(days=2)
+        walk_in("mp-01", day=saturday, sport="pickleball")  # 50,000 at the weekend rate...
+        walk_in("mp-02", day=friday, sport="pickleball")  # ...and 40,000: 90,000, the top sport.
+        walk_in("tn-1", day=saturday, sport="tennis")  # 70,000: 77.8% rounds to 80.
+        walk_in("mp-03", day=friday, sport="badminton")  # 35,000: 38.9% rounds to 40.
+
+        rows = overview(role=Role.OWNER, now=NOW).by_sport_30d
+
+        assert [(r.sport, r.gross, r.width) for r in rows] == [
+            ("pickleball", 90_000, 100),
+            ("tennis", 70_000, 80),
+            ("badminton", 35_000, 40),
+        ]
 
     def test_empty(self):
         result = overview(role=Role.OWNER, now=NOW)
 
         assert result.revenue_7d.gross == 0
         assert result.by_sport_30d == ()
+
+
+def fill_mondays(*hours_per_monday: int) -> None:
+    """Book `mp-01` at 10:00 for the given number of hours on each of the window's four Mondays."""
+    mondays = [date(2026, 10, 5), date(2026, 10, 12), date(2026, 10, 19), date(2026, 10, 26)]
+    created = datetime(2026, 10, 1, tzinfo=rules.TIME_ZONE)
+    for monday, hours in zip(mondays, hours_per_monday, strict=True):
+        walk_in("mp-01", day=monday, hour=10, hours=hours, now=created)
 
 
 @pytest.mark.django_db
@@ -343,6 +386,17 @@ class TestHeatmap:
 
         assert (rows[0].cells[3].pct, rows[0].cells[3].level) == (25, 2)
         assert sum(cell.pct for row in rows for cell in row.cells) == 25
+
+    def test_levels_run_from_0_to_9_one_per_ten_percent(self, monkeypatch):
+        monkeypatch.setattr(queries, "SPACE_COUNT", 1)  # One space: a cell holds 4 space-hours.
+        fill_mondays(3, 2, 2, 1)  # Mon 10:00 is booked 4 times, 11:00 3 times, 12:00 once.
+
+        cells = overview(role=Role.OWNER, now=NOW).heatmap.rows[0].cells
+
+        rest = overview(role=Role.OWNER, now=NOW).heatmap.rows[1:]
+        assert [(cell.pct, cell.level) for cell in cells[3:6]] == [(100, 9), (75, 7), (25, 2)]
+        assert cells[0].level == 0
+        assert {cell.level for row in rest for cell in row.cells} == {0}
 
     def test_hours_and_weekdays_follow_manila_time(self):
         walk_in("mp-01", day=date(2026, 10, 27), hour=7)  # Tuesday 07:00 is Monday 23:00 UTC.
@@ -437,7 +491,60 @@ class TestPage:
         assert "Utilization" in html and "1 of 320 space-hours" in html
         assert "Last 7 days" in html and "Last 30 days" in html
         assert '<table class="heatmap">' in html and 'scope="row">Mon</th>' in html
-        assert 'class="bar w-100"' in html
+        assert class_lists(html, "span", "ov-fill") == [["ov-fill", "ov-fill-badminton", "w-100"]]
+
+    def test_the_stat_cards(self, client, pinned_clock):
+        walk_in("mp-01", hour=14)  # Today, after `NOW`: counted today, but not yet in the 7 days.
+        online("mp-02", day=TODAY - timedelta(days=2), fee=1500)  # 45,000 at the weekend rate.
+        online("mp-03", confirm=False, now=NOW)  # A live hold.
+        html = page(client, Role.OWNER)
+
+        assert ("Revenue · 7 days", "₱450", "Net ₱435 after fees") in stat_cards(html)
+        assert ("Bookings · today", "1", "₱350 revenue") in stat_cards(html)
+        assert ("Utilization · today", "0.3%", "1 of 320 space-hours") in stat_cards(html)
+        assert (
+            "Active holds",
+            "1",
+            f"Unpaid, held for {rules.HOLD_MINUTES} minutes",
+        ) in stat_cards(html)
+        assert len(stat_cards(html)) == 4
+
+    def test_the_bars_take_their_width_from_the_top_sport(self, client, pinned_clock):
+        friday, saturday = TODAY - timedelta(days=3), TODAY - timedelta(days=2)
+        walk_in("mp-01", day=saturday, sport="pickleball")  # 90,000 with the next one: the top.
+        walk_in("mp-02", day=friday, sport="pickleball")
+        walk_in("tn-1", day=saturday, sport="tennis")  # 70,000: 77.8%.
+        walk_in("mp-03", day=friday, sport="badminton")  # 35,000: 38.9%.
+        html = page(client, Role.OWNER)
+
+        assert class_lists(html, "span", "ov-fill") == [
+            ["ov-fill", "ov-fill-pickleball", "w-100"],
+            ["ov-fill", "ov-fill-tennis", "w-80"],
+            ["ov-fill", "ov-fill-badminton", "w-40"],
+        ]
+        assert "₱900" in html and "2 bookings" in html and "1 booking<" in html
+
+    def test_the_heatmap_cells_take_their_shade_from_the_level(
+        self, client, pinned_clock, monkeypatch
+    ):
+        monkeypatch.setattr(queries, "SPACE_COUNT", 1)  # One space: a cell holds 4 space-hours.
+        fill_mondays(3, 2, 2, 1)
+        html = page(client, Role.OWNER)
+
+        levels = Counter(classes[0] for classes in class_lists(html, "td", "heat-"))
+        assert levels == {"heat-0": 109, "heat-2": 1, "heat-7": 1, "heat-9": 1}  # 7 x 16 cells.
+        assert '<td class="heat-9" title="100%">100</td>' in html
+        assert '<td class="heat-0" title="0%">0</td>' in html
+
+    def test_one_h1_and_no_inline_styles(self, client, pinned_clock):
+        walk_in("mp-01", hour=13, name="Juan Dela Cruz")
+        html = page(client, Role.OWNER)
+        tags = Tags(html).tags
+
+        assert [attrs for tag, attrs in tags if tag == "h1"] == [{"class": "dash-heading"}]
+        assert '<h1 class="dash-heading">Overview</h1>' in html
+        assert "<title>Overview · Kalaro Courts staff</title>" in html
+        assert not [tag for tag, attrs in tags if tag == "style" or "style" in attrs]
 
     def test_refund_alert_only_when_there_are_any(self, client, pinned_clock):
         assert "need a refund" not in page(client, Role.OWNER)
