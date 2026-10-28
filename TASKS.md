@@ -3,7 +3,7 @@ Status: [ ] planned · [~] in progress · [x] merged · [-] cancelled (excluded 
 
 > Each unit's plan, prompts and acceptance criteria are in its `plan:` link. `/build-unit {KEY-id}` runs them.
 
-## Sprint 1 — Court booking MVP   (planned 2026-10-16)
+## Sprint 1 — Court booking MVP   (planned 2026-10-16) · v0.1.0 (2026-10-21)
 Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
 
 > **Epic:** A portfolio court-booking system for the fictional Kalaro Courts: a Next.js customer storefront and a
@@ -93,7 +93,7 @@ Epic: CBS-1 · Branch base: `main` · Plan: [[2026-10-16-court-booking-mvp]]
     - Follow-ups (not scheduled): `overview.html:15` alert copy still says "payment arrived after the hold expired"; web `/book/success` copy for a staff-cancelled paid booking; `holds._expire_checkout` duplicates `confirm._expire_session`; nits N1–N8 from the first review (NUL-byte 500s, budget counted before validation, window drift test, bare fragments without htmx, viewer cancels past real bookings, block-note defacement).
     - Release: run the runbook `## Pre-release checklist` on Cloud Run before calling the MVP done.
 
-## Sprint 2 — Follow-up fixes   (planned 2026-10-21)
+## Sprint 2 — Follow-up fixes   (planned 2026-10-21) · v0.2.0 (2026-10-21)
 Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-up-fixes]]
 
 > **Epic:** Clears the triaged follow-ups and deferred items from Sprint 1: API cache headers, duplicate helpers,
@@ -112,12 +112,12 @@ Epic: (key not recorded) · Branch base: `develop` · Plan: [[2026-10-21-follow-
 - [x] CBS-15 — Drift tests and nightly runbook note · Changed · plan: [[2026-10-21-follow-up-fixes]] prompts: 08 · depends: — · model: haiku (merged 2026-10-21)
   - **Result:** Drift tests tie rate-limit windows to the prune age and backend `RETENTION_DAYS` to `site.ts` (now a Turbo test input); prune boundary pinned; runbook checks for a running execution before a manual nightly run. Downstream: none.
   - **Story:** Tests tie the rate-limit windows to the prune age and the backend's retention days to the web's, and pin the prune boundary; the runbook adds a check before a manual nightly run.
-- [~] CBS-16 — Checkout per-tab sessions and result copy · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 09, 10, 11 · depends: CBS-13 · model: opus (merged 2026-10-21)
+- [x] CBS-16 — Checkout per-tab sessions and result copy · Fixed · plan: [[2026-10-21-follow-up-fixes]] prompts: 09, 10, 11 · depends: CBS-13 · model: opus (merged 2026-10-21)
   - **Result:** success/cancel URLs carry `?ref=<reference>`; `cb_checkout` holds up to 3 `REF.session` entries (`src/lib/booking/checkout-cookie.ts`); result pages and `releaseHold` pick by `ref`; a bad checkout URL releases its hold; cause-neutral refund copy. Downstream: none. Known: `addCheckout` keeps legacy bare entries, so the legacy fallback can serve a stale `ref` until the cookie ages out (24h; guardian should-fix, not applied).
   - **Story:** The success and cancel URLs carry `?ref=`, and the `cb_checkout` cookie holds up to 3 booking entries, so each tab's result page acts on its own booking. A bad checkout URL releases its hold, and the refund copy names no cause.
   - **Release:** after this unit merges, open a `develop → main` PR (it deploys), then run the plan's manual test-mode checks.
 
-## Sprint 3 — UI redesign   (planned 2026-10-28)
+## Sprint 3 — UI redesign   (planned 2026-10-28) · v0.3.0 (2026-10-28)
 Epic: CBS-17 · Branch base: `develop` · Plan: [[2026-10-28-ui-redesign]]
 
 > **Epic:** Brings the Claude Design prototypes into both apps: a polished storefront (tokens, Free tonight, step-card
@@ -134,4 +134,6 @@ Epic: CBS-17 · Branch base: `develop` · Plan: [[2026-10-28-ui-redesign]]
 - [x] CBS-20 — Dashboard redesign and Front desk · Added · plan: [[2026-10-28-ui-redesign]] prompts: 07, 08, 09, 10, 11 · depends: CBS-19 · model: opus (merged 2026-10-28)
   - **Result:** PR #25. Sidebar shell (`dashboard/base.html` blocks `dashboard_heading`, `dashboard_eyebrow`, `dashboard_nav_badge`; `templates/base.html` hooks `body_class`/`main_class`), self-hosted Archivo + JetBrains Mono (OFL, `core/static/core/fonts`). Front desk: `dashboard:desk` (`desk/`), `dashboard:desk_suggest`, `dashboard:check_in` (`desk/check-in/<ref>/`, `return=schedule|detail`; already-checked-in is a no-op success only for a role allowed that kind of booking). Schedule is one `.sg` grid of booking blocks (`schedule.Grid.blocks`, `empty_cells`, `hour_heads` replaces `hours`; full basketball = one `rs-2` block), now marker, panel check-in. Bookings list status segments over all 7 `STATUS_CHOICES`; detail Check in. Overview stat cards, bars, heatmap (`HeatCell.level` now 0–9). `test_bookings.assert_csp_safe` was a no-op (no `handle_starttag`) and is fixed. Backend 1002 tests. Gate: CI + code-guardian (0 Blockers; Should-fix and nits fixed in 5af39f1), then CI only.
   - **Downstream:** no schema, env or API changes. CBS-21: `/privacy` must list the check-in time and staff user; runbook needs the 0003 migration step; the web Owners CTA can now mention front-desk check-in. Follow-ups: the non-JS desk refusal renders in `fragment_page.html` (titled Schedule); "View in schedule" can't open the panel; derived pill labels repeated as an `{% if %}` chain in 3 templates (no derived label on `queries` rows); overview lacks week-over-week and 3 of the spec's stat cards (no data source); `.heat-6` white text may be low contrast; `500.html` still has the old banner glyph; `DeskRow` has no `source`, so an ended anonymized walk-in shows "—"; bookings footer lost its "26–30" range.
-- [ ] CBS-21 — Privacy notice and runbook · Changed · plan: [[2026-10-28-ui-redesign]] prompts: 12 · depends: CBS-20 · model: sonnet
+- [x] CBS-21 — Privacy notice and runbook · Changed · plan: [[2026-10-28-ui-redesign]] prompts: 12 · depends: CBS-20 · model: sonnet (merged 2026-10-28)
+  - **Result:** PR #26. `/privacy` lists the check-in time and the staff account, and says the check-in time stays after anonymization (`nightly.anonymize` doesn't touch `checked_in_at`/`checked_in_by`). Runbook: `### Check-in migration (0003)` under Database roles and migrations, demo bookings never pre-checked-in, the Neon pre-release item names `bookings.0003`. Gate: CI only.
+  - **Downstream:** no schema, env or API changes. **Release:** apply `bookings.0003` with `MIGRATE_DATABASE_URL` on `dev` then `main` (runbook) before the `develop → main` PR, then run the plan's manual checks. Follow-up: the web Owners CTA can mention front-desk check-in (CBS-20 note; outside this unit's files).

@@ -1,7 +1,7 @@
 ---
 type: plan
 kind: feature
-status: in-progress
+status: done
 repo: court-booking-system
 delivery: pr
 base: develop
@@ -213,3 +213,29 @@ Manual checks, in test mode after the Release:
 - 2026-10-28: 11 done (sonnet, 0 retries): overview restyled (4 `.stat` cards, per-sport `ov-fill` bars on the existing `SportRevenue.width`, revenue table, heatmap, next 3 hours); only Python change `HeatCell.level` 0–5 → 0–9 (`min(9, pct // 10)`, sole reader `overview.html`). Left out (no source, no new SQL): week-over-week (`_revenue` has no prior-week window) and the spec's 7-day bookings/walk-ins, 7-day utilization/peak and average-booking cards; cards show Revenue 7d, Bookings today, Utilization today, Active holds. Note: white text from `.heat-6` per spec may be low contrast. Backend 994 tests.
 - 2026-10-28: CBS-20 shipped as PR #25 (bc4eb1a), CI green. Gate: CI + code-guardian → 0 Blockers (APPROVE WITH NITS). Fixed in 5af39f1 (user: Should-fix + nits): the viewer gets 403 on an already-checked-in real online booking (the no-op success now applies R6 inline in `views.py`); the desk name fallback (block → Blocked, live nameless → Walk-in, else —; `DeskRow` has no `source`, so an ended anonymized walk-in shows —); `.sg-now` spans 24 rows; unstyled `dash-head`/`desk-suggest` dropped, `ov-bar-label` styled; dead CSP assertion removed; viewer-masking tests for the full desk page and the no-JS name path. CI green on 5af39f1.
 - 2026-10-28: CBS-20 merged (PR #25). Next unit: CBS-21.
+- 2026-10-28: CBS-21 started on branch CBS-21. Rollback point 0879c3fb0f294afefd01430b717ca40e6e2147f8.
+- 2026-10-28: 12 done (sonnet, 0 retries): `/privacy` lists the check-in time and the staff account (and says the check-in time survives anonymization, which matches `nightly.anonymize`); runbook: `### Check-in migration (0003)` (apply on dev then main before the Release PR, `showmigrations bookings`, no backwards migration), demo bookings never pre-checked-in, Neon checklist names `bookings.0003`. Prompt widened at dispatch to the staff user, per the CBS-20 Downstream note. Not done (outside the files): the web Owners CTA mention of front-desk check-in.
+- 2026-10-28: CBS-21 shipped as PR #26 (58b8d4f), CI green. Gate: CI only (user).
+- 2026-10-28: CBS-21 merged (PR #26). All 4 units merged; status done.
+
+## Outcome
+**Shipped** (PRs #23–#26 into `develop`, not yet released to `main`):
+- Storefront: new tokens and shell, Free tonight, step-card `/book` with a sticky summary, dark reference card on success.
+- Check-in: nullable `checked_in_at`/`checked_in_by` (expand-only `0003`), `checkin.check_in`, `roles.can_check_in`, derived `checked_in`/`completed` statuses.
+- Dashboard: sidebar shell, Front desk (lookup, suggest, arriving, on court, check in), block schedule grid, restyled bookings list, detail and overview.
+- `/privacy` and the runbook cover check-in and the 0003 rollout.
+
+**Deviations from the plan:**
+- Demo check-in seeding was dropped in the audit.
+- `arriving` keeps an early check-in until it starts (the spec said "not checked in"), so no row drops out of both lists.
+- Overview has 4 stat cards instead of the spec's 7, and no week-over-week (no data source).
+- An OOB nav badge was added on check-in.
+- `.prettierignore` gained `docs/plans/**/prototypes/` (approved).
+- 12 also lists the staff account, per the CBS-20 note.
+
+**Gotchas:**
+- `test_bookings.assert_csp_safe` had silently checked nothing since it was written (no `handle_starttag`). It is fixed in CBS-20.
+- An already-checked-in no-op must still apply the viewer rule (R6), or the viewer learns about real bookings.
+- The release must apply `0003` before the `develop → main` PR.
+
+**Open follow-ups:** in TASKS.md, Sprint 3, the **Downstream** lines of CBS-18 to CBS-21.
