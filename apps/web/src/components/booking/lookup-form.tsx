@@ -6,16 +6,19 @@ import { type LookupState, lookup } from "@/lib/booking/lookup";
 import { formatHour, formatPeso } from "@/lib/booking/params";
 
 const FOCUS = "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-court";
-const INPUT = `block min-h-11 w-full rounded-lg border-2 border-line bg-white px-3 text-base text-ink ${FOCUS}`;
+const INPUT = `block min-h-11 w-full rounded-[10px] border-[1.5px] border-line bg-white px-3.5 py-3 text-base text-ink ${FOCUS}`;
 
 const INITIAL: LookupState = { values: { reference: "", email: "" } };
 
 const STATUS: Record<BookingStatus, { label: string; className: string }> = {
-  confirmed: { label: "Confirmed", className: "bg-court text-white" },
-  pending: { label: "Awaiting payment", className: "bg-ink text-paper" },
-  expired: { label: "Expired", className: "bg-line text-ink" },
-  cancelled: { label: "Cancelled", className: "bg-line text-ink" },
-  needs_refund: { label: "Refund due", className: "bg-clay text-white" },
+  confirmed: { label: "Confirmed", className: "bg-court-soft text-[#166534]" },
+  pending: { label: "Awaiting payment", className: "bg-[#ffedd5] text-warn-ink" },
+  expired: { label: "Expired", className: "bg-hair text-slate-5" },
+  cancelled: { label: "Cancelled", className: "bg-[#fee2e2] text-[#991b1b]" },
+  needs_refund: {
+    label: "Refund due",
+    className: "border border-warn-line bg-warn-bg text-warn-ink",
+  },
 };
 
 /** The lookup form and, below it, the matching booking's summary. */
@@ -23,16 +26,13 @@ export function LookupForm() {
   const [state, formAction, pending] = useActionState(lookup, INITIAL);
 
   return (
-    <div className="grid gap-6">
-      <form action={formAction} className="grid gap-5">
-        {state.message ? (
-          <p role="alert" className="m-0 rounded-lg border-2 border-clay p-3 font-bold">
-            {state.message}
-          </p>
-        ) : null}
-
+    <div className="grid gap-3.5">
+      <form
+        action={formAction}
+        className="grid gap-3.5 rounded-2xl border border-line-soft bg-white p-[22px]"
+      >
         <div>
-          <label htmlFor="reference" className="mb-1 block text-sm font-bold">
+          <label htmlFor="reference" className="mb-1.5 block text-sm font-bold">
             Booking reference
           </label>
           <input
@@ -44,14 +44,18 @@ export function LookupForm() {
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            placeholder="KC-7Q4M2X"
+            placeholder="KC-XXXXXX"
+            aria-describedby="reference-hint"
             defaultValue={state.values.reference}
-            className={`${INPUT} uppercase`}
+            className={`${INPUT} font-mono text-lg tracking-[0.06em] uppercase`}
           />
+          <p id="reference-hint" className="m-0 mt-1.5 text-[13px] text-slate-5">
+            References start with KC-.
+          </p>
         </div>
 
         <div>
-          <label htmlFor="email" className="mb-1 block text-sm font-bold">
+          <label htmlFor="email" className="mb-1.5 block text-sm font-bold">
             Email used for the booking
           </label>
           <input
@@ -77,6 +81,15 @@ export function LookupForm() {
           </button>
         </div>
       </form>
+
+      {state.message ? (
+        <p
+          role="alert"
+          className="m-0 rounded-xl border border-warn-line bg-warn-bg px-4 py-3.5 text-[15px] text-warn-ink"
+        >
+          {state.message}
+        </p>
+      ) : null}
 
       <div aria-live="polite">{state.booking ? <Summary booking={state.booking} /> : null}</div>
     </div>
@@ -115,7 +128,6 @@ function Summary({ booking }: { booking: BookingSummary }) {
       ? `half court${booking.half ? ` (side ${booking.half})` : ""}`
       : "full court";
   const rows: [string, string][] = [
-    ["Reference", booking.reference],
     ["Court", booking.court.name],
     ["Sport", sport ? `${sport}, ${coverage}` : coverage],
     ["Date", formatDate(booking.date)],
@@ -131,21 +143,28 @@ function Summary({ booking }: { booking: BookingSummary }) {
   return (
     <section
       aria-labelledby="booking-result"
-      className="rounded-xl border-2 border-court bg-white p-4"
+      className="overflow-hidden rounded-2xl border-2 border-court bg-white"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="booking-result" className="disp m-0 text-xl">
-          Your booking
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-court-tint px-[22px] py-[18px]">
+        <h2
+          id="booking-result"
+          className="m-0 font-mono text-[22px] font-bold tracking-[0.04em] break-all"
+        >
+          <span className="sr-only">Booking </span>
+          {booking.reference}
         </h2>
-        <span className={`rounded-full px-3 py-1 text-sm font-bold ${status.className}`}>
+        <span className={`rounded-full px-2.5 py-1 text-[12.5px] font-bold ${status.className}`}>
           {status.label}
         </span>
       </div>
-      <dl className="m-0 mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+      <dl className="m-0">
         {rows.map(([term, value]) => (
-          <div key={term} className="contents">
-            <dt className="font-bold">{term}</dt>
-            <dd className="m-0">{value}</dd>
+          <div
+            key={term}
+            className="flex justify-between gap-4 border-t border-hair px-[22px] py-[13px] text-[15.5px]"
+          >
+            <dt className="text-slate-5">{term}</dt>
+            <dd className="m-0 text-right font-bold tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>

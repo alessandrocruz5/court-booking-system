@@ -32,7 +32,9 @@ export default async function CancelledPage({
   if (checkoutSessionId && isPrefetch(await headers())) {
     return (
       <Result eyebrow="Checkout cancelled" title="Release your hold?">
-        <p className="mt-4 max-w-xl">Release the time you were holding so others can book it.</p>
+        <Card>
+          <p className="m-0">Release the time you were holding so others can book it.</p>
+        </Card>
         <form action={releaseHold} className="row">
           {ref ? <input type="hidden" name="ref" value={ref} /> : null}
           <button type="submit" className="btn btn-accent">
@@ -49,7 +51,9 @@ export default async function CancelledPage({
     case "released":
       return (
         <Result eyebrow="Checkout cancelled" title="No worries.">
-          <p className="mt-4 max-w-xl">Your hold was released. No payment was taken.</p>
+          <Card>
+            <p className="m-0">Your hold was released. No payment was taken.</p>
+          </Card>
           <div className="row">
             <Link href="/book" className="btn btn-accent">
               Pick another time
@@ -60,7 +64,9 @@ export default async function CancelledPage({
     case "already_paid":
       return (
         <Result eyebrow="Already paid" title="You're all set.">
-          <p className="mt-4 max-w-xl">This booking is already paid.</p>
+          <Card>
+            <p className="m-0">This booking is already paid.</p>
+          </Card>
           <div className="row">
             <Link href={`/book/success${query}`} prefetch={false} className="btn btn-accent">
               See your booking
@@ -71,9 +77,11 @@ export default async function CancelledPage({
     case "not_found":
       return (
         <Result eyebrow="Checkout cancelled" title="Nothing to release.">
-          <p className="mt-4 max-w-xl">
-            We couldn&apos;t find a hold to release. It may have already ended.
-          </p>
+          <Card>
+            <p className="m-0">
+              We couldn&apos;t find a hold to release. It may have already ended.
+            </p>
+          </Card>
           <div className="row">
             <Link href="/book" className="btn btn-accent">
               Book a court
@@ -84,7 +92,9 @@ export default async function CancelledPage({
     case "unavailable":
       return (
         <Result eyebrow="Try again" title="Still checking.">
-          <p className="mt-4 max-w-xl">We couldn&apos;t check right now. Try again in a moment.</p>
+          <Card warn>
+            <p className="m-0">We couldn&apos;t check right now. Try again in a moment.</p>
+          </Card>
           <div className="row">
             <Link href={`/book/cancelled${query}`} prefetch={false} className="btn btn-accent">
               Check again
@@ -133,9 +143,28 @@ function Result({
 }) {
   return (
     <main className="wrap">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1 className="disp text-4xl">{title}</h1>
-      {children}
+      <div className="mx-auto max-w-[640px]">
+        <p className="eyebrow">{eyebrow}</p>
+        <h1 className="m-0 mb-6 text-[clamp(36px,6vw,52px)] leading-[1.05] font-black tracking-[-0.03em] font-stretch-[112%]">
+          {title}
+        </h1>
+        {children}
+      </div>
     </main>
+  );
+}
+
+/** The body card: white, or warn-toned when the check failed. */
+function Card({ warn = false, children }: { warn?: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={`rounded-2xl border px-[22px] py-[18px] text-base leading-normal ${
+        warn
+          ? "border-warn-line bg-warn-bg text-warn-ink"
+          : "border-line-soft bg-white text-slate-6"
+      }`}
+    >
+      {children}
+    </div>
   );
 }

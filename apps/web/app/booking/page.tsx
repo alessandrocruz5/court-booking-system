@@ -6,12 +6,14 @@ export const metadata: Metadata = { title: "Find your booking", robots: { index:
 export default function BookingLookupPage() {
   return (
     <main className="wrap">
-      <p className="eyebrow">Your booking</p>
-      <h1 className="disp text-4xl sm:text-5xl">Find your booking</h1>
-      <p className="mt-4 max-w-xl">
-        Enter the reference you were shown after paying and the email you booked with.
-      </p>
-      <div className="mt-8 max-w-xl">
+      <div className="mx-auto max-w-[640px]">
+        <p className="eyebrow">Your booking</p>
+        <h1 className="m-0 mb-2.5 text-[clamp(34px,5vw,48px)] leading-[1.1] font-black tracking-[-0.03em] font-stretch-[112%]">
+          Find your booking
+        </h1>
+        <p className="m-0 mb-6 text-[16.5px] leading-[1.55] text-slate-6">
+          Enter the reference you got after paying and the email you booked with.
+        </p>
         <LookupForm />
       </div>
     </main>

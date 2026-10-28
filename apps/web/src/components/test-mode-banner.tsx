@@ -4,10 +4,8 @@ import { SITE } from "@/content/site";
 export function TestModeBanner() {
   return (
     <aside aria-label="Test mode" className="banner">
-      <p className="m-0 leading-[1.4]">
-        <span aria-hidden="true">● </span>
-        {SITE.testModeNotice}
-      </p>
+      <span aria-hidden="true" className="inline-block size-[7px] rounded-full bg-[#4ade80]" />
+      <p className="m-0 leading-[1.4]">{SITE.testModeNotice}</p>
     </aside>
   );
 }
