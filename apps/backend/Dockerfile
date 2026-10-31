@@ -5,7 +5,7 @@
 # The build reads no environment: settings import with an empty env, and gunicorn validates the
 # runtime env when it starts. No ENTRYPOINT, so the job can run `python manage.py nightly`.
 
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.13.0 /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -21,7 +21,7 @@ COPY . .
 # Settings import with an empty environment, so collectstatic needs no variables.
 RUN DJANGO_SETTINGS_MODULE=config.settings /app/.venv/bin/python manage.py collectstatic --noinput
 
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 WORKDIR /app
 # A home directory, because gunicorn creates its control socket in ~/.gunicorn.
 RUN groupadd --system app \
