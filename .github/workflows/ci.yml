@@ -40,7 +40,7 @@ jobs:
           cache: pnpm
       # setup-uv publishes immutable releases only (no major tags since v8), so it's pinned like gitleaks.
       # uv downloads the Python from apps/backend/.python-version itself.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
