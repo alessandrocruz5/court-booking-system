@@ -7,6 +7,9 @@ PayMongo runs in **test mode only**, so no real payment is ever taken.
 The venue has 2 basketball courts (full or half court; volleyball on a full court), 4 tennis courts and 12
 badminton/pickleball courts. It is open daily 07:00–23:00 (Asia/Manila), and bookings open up to 7 days ahead.
 
+Booking: https://cb-web-6699055361.asia-southeast1.run.app
+Dashboard: https://cb-backend-6699055361.asia-southeast1.run.app/dashboard/login/
+
 ## Architecture
 
 ```text
