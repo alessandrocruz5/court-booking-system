@@ -4,7 +4,7 @@
 #   docker build -f apps/web/Dockerfile -t cb-web:local .
 # The build reads no environment: every variable is read per request at runtime.
 
-FROM node:24-slim AS base
+FROM node:25-slim AS base
 RUN corepack enable
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
@@ -29,7 +29,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 COPY --from=pruner /app/out/full/ ./
 RUN TURBO_TELEMETRY_DISABLED=1 pnpm turbo run build --filter=@cb/web
 
-FROM node:24-slim AS runner
+FROM node:25-slim AS runner
 ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=8080
